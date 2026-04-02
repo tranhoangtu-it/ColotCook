@@ -741,6 +741,7 @@ fn parse_optional_sandbox_config(root: &JsonValue) -> Result<SandboxConfig, Conf
         filesystem_mode,
         allowed_mounts: optional_string_array(sandbox, "allowedMounts", "merged settings.sandbox")?
             .unwrap_or_default(),
+        resource_limits: None,
     })
 }
 

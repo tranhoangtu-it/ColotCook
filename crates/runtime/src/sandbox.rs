@@ -408,6 +408,7 @@ mod tests {
             network_isolation: Some(false),
             filesystem_mode: Some(FilesystemIsolationMode::WorkspaceOnly),
             allowed_mounts: vec!["logs".to_string()],
+            resource_limits: None,
         };
 
         let request = config.resolve_request(
