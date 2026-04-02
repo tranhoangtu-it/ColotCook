@@ -294,7 +294,7 @@ impl McpHttpClient {
 
     /// Send a JSON-RPC request and return the parsed response.
     /// Retries once on 401 (Unauthorized) by clearing cached OAuth tokens.
-    async fn send_request<P: serde::Serialize, R: serde::de::DeserializeOwned>(
+    async fn send_request<P: serde::Serialize + Send + Sync + 'static, R: serde::de::DeserializeOwned + Send + 'static>(
         &self,
         method: &'static str,
         request: JsonRpcRequest<P>,
@@ -305,13 +305,13 @@ impl McpHttpClient {
     }
 
     /// Internal implementation of send_request with retry logic.
-    fn send_request_internal<P: serde::Serialize + Send + Sync, R: serde::de::DeserializeOwned + Send>(
-        &self,
+    fn send_request_internal<'a, P: serde::Serialize + Send + Sync + 'a, R: serde::de::DeserializeOwned + Send + 'a>(
+        &'a self,
         method: &'static str,
         request: JsonRpcRequest<P>,
         timeout_ms: u64,
         is_retry: bool,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<JsonRpcResponse<R>, McpServerManagerError>> + Send + '_>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<JsonRpcResponse<R>, McpServerManagerError>> + Send + 'a>> {
         Box::pin(async move {
         let builder = self
             .client
