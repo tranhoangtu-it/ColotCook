@@ -443,6 +443,10 @@ fn warn_if_permissive(path: &Path) {
 
 fn acquire_credentials_lock(path: &Path) -> io::Result<File> {
     let lock_path = path.with_extension("json.lock");
+    // Ensure parent directory exists before creating lock file
+    if let Some(parent) = lock_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     let start = std::time::Instant::now();
     let timeout = std::time::Duration::from_secs(5);
     loop {
