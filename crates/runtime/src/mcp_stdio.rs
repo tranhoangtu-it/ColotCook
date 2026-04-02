@@ -1166,6 +1166,7 @@ fn default_initialize_params() -> McpInitializeParams {
 }
 
 #[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use std::collections::BTreeMap;
     use std::fs;

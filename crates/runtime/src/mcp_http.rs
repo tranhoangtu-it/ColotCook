@@ -305,13 +305,14 @@ impl McpHttpClient {
     }
 
     /// Internal implementation of send_request with retry logic.
-    async fn send_request_internal<P: serde::Serialize, R: serde::de::DeserializeOwned>(
+    fn send_request_internal<P: serde::Serialize + Send + Sync, R: serde::de::DeserializeOwned + Send>(
         &self,
         method: &'static str,
         request: JsonRpcRequest<P>,
         timeout_ms: u64,
         is_retry: bool,
-    ) -> Result<JsonRpcResponse<R>, McpServerManagerError> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<JsonRpcResponse<R>, McpServerManagerError>> + Send + '_>> {
+        Box::pin(async move {
         let builder = self
             .client
             .post(&self.url)
@@ -379,6 +380,7 @@ impl McpHttpClient {
             })?;
 
         Ok(parsed)
+        }) // end Box::pin(async move { ... })
     }
 
     /// Initialize the MCP connection.
