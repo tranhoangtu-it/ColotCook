@@ -482,8 +482,10 @@ fn release_credentials_lock(path: &Path) {
 }
 
 fn write_credentials_root(path: &PathBuf, root: &Map<String, Value>) -> io::Result<()> {
-    let _lock = acquire_credentials_lock(path)?;
+    let lock = acquire_credentials_lock(path)?;
     let result = write_credentials_root_inner(path, root);
+    // Drop the file handle BEFORE removing the lock file (Windows requires this)
+    drop(lock);
     release_credentials_lock(path);
     result
 }

@@ -945,7 +945,11 @@ fn acquire_session_lock(path: &Path) -> Result<(), SessionError> {
             .create_new(true)
             .open(&lock_path)
         {
-            Ok(_) => return Ok(()),
+            Ok(file) => {
+                    // Explicitly drop handle before returning (Windows compatibility)
+                    drop(file);
+                    return Ok(());
+                }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 // Check if lock is stale (older than 60 seconds)
                 if let Ok(metadata) = fs::metadata(&lock_path) {
