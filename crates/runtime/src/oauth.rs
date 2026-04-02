@@ -291,6 +291,67 @@ pub fn clear_oauth_credentials() -> io::Result<()> {
     write_credentials_root(&path, &root)
 }
 
+pub fn load_mcp_oauth_credentials(server_name: &str) -> io::Result<Option<OAuthTokenSet>> {
+    let path = credentials_path()?;
+    let root = read_credentials_root(&path)?;
+    let Some(mcp_servers) = root.get("mcpServers") else {
+        return Ok(None);
+    };
+    if mcp_servers.is_null() {
+        return Ok(None);
+    }
+    let servers_map = mcp_servers
+        .as_object()
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "mcpServers must be a JSON object",
+            )
+        })?;
+    let Some(server_creds) = servers_map.get(server_name) else {
+        return Ok(None);
+    };
+    if server_creds.is_null() {
+        return Ok(None);
+    }
+    let stored = serde_json::from_value::<StoredOAuthCredentials>(server_creds.clone())
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    Ok(Some(stored.into()))
+}
+
+pub fn save_mcp_oauth_credentials(server_name: &str, token_set: &OAuthTokenSet) -> io::Result<()> {
+    let path = credentials_path()?;
+    let mut root = read_credentials_root(&path)?;
+    let mcp_servers = root
+        .entry("mcpServers".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    let servers_map = mcp_servers
+        .as_object_mut()
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "mcpServers must be a JSON object",
+            )
+        })?;
+    servers_map.insert(
+        server_name.to_string(),
+        serde_json::to_value(StoredOAuthCredentials::from(token_set.clone()))
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?,
+    );
+    write_credentials_root(&path, &root)
+}
+
+pub fn clear_mcp_oauth_credentials(server_name: &str) -> io::Result<()> {
+    let path = credentials_path()?;
+    let mut root = read_credentials_root(&path)?;
+    if let Some(mcp_servers) = root.get_mut("mcpServers") {
+        if let Some(servers_map) = mcp_servers.as_object_mut() {
+            servers_map.remove(server_name);
+        }
+    }
+    write_credentials_root(&path, &root)
+}
+
 pub fn parse_oauth_callback_request_target(target: &str) -> Result<OAuthCallbackParams, String> {
     let (path, query) = target
         .split_once('?')
@@ -585,5 +646,52 @@ mod tests {
         assert_eq!(params.code.as_deref(), Some("abc"));
         assert_eq!(params.state.as_deref(), Some("xyz"));
         assert!(parse_oauth_callback_request_target("/wrong?code=abc").is_err());
+    }
+
+    #[test]
+    fn mcp_server_credentials_round_trip() {
+        let _guard = env_lock();
+        let config_home = temp_config_home();
+        std::env::set_var("CLAW_CONFIG_HOME", &config_home);
+        let path = credentials_path().expect("credentials path");
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("create parent");
+
+        let token_set1 = OAuthTokenSet {
+            access_token: "mcp-token-1".to_string(),
+            refresh_token: Some("mcp-refresh-1".to_string()),
+            expires_at: Some(456),
+            scopes: vec!["scope:x".to_string()],
+        };
+        let token_set2 = OAuthTokenSet {
+            access_token: "mcp-token-2".to_string(),
+            refresh_token: Some("mcp-refresh-2".to_string()),
+            expires_at: Some(789),
+            scopes: vec!["scope:y".to_string()],
+        };
+
+        save_mcp_oauth_credentials("server-1", &token_set1).expect("save server 1");
+        save_mcp_oauth_credentials("server-2", &token_set2).expect("save server 2");
+
+        assert_eq!(
+            load_mcp_oauth_credentials("server-1").expect("load server 1"),
+            Some(token_set1.clone())
+        );
+        assert_eq!(
+            load_mcp_oauth_credentials("server-2").expect("load server 2"),
+            Some(token_set2.clone())
+        );
+
+        clear_mcp_oauth_credentials("server-1").expect("clear server 1");
+        assert_eq!(
+            load_mcp_oauth_credentials("server-1").expect("load after clear"),
+            None
+        );
+        assert_eq!(
+            load_mcp_oauth_credentials("server-2").expect("server 2 still exists"),
+            Some(token_set2)
+        );
+
+        std::env::remove_var("CLAW_CONFIG_HOME");
+        std::fs::remove_dir_all(config_home).expect("cleanup temp dir");
     }
 }
