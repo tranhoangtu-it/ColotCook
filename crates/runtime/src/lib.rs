@@ -6,6 +6,7 @@ mod conversation;
 mod file_ops;
 mod hooks;
 mod json;
+mod logging;
 mod mcp;
 mod mcp_client;
 mod mcp_http;
@@ -13,6 +14,7 @@ mod mcp_stdio;
 mod oauth;
 mod permissions;
 mod prompt;
+mod rate_limit;
 mod remote;
 pub mod sandbox;
 mod session;
@@ -46,6 +48,9 @@ pub use file_ops::{
 pub use hooks::{
     HookAbortSignal, HookEvent, HookProgressEvent, HookProgressReporter, HookRunResult, HookRunner,
 };
+pub use logging::{
+    log, log_debug, log_error, log_info, log_warn, LogLevel,
+};
 pub use mcp::{
     mcp_server_signature, mcp_tool_name, mcp_tool_prefix, normalize_name_for_mcp,
     scoped_mcp_config_hash, unwrap_ccr_proxy_url,
@@ -77,6 +82,9 @@ pub use permissions::{
 pub use prompt::{
     load_system_prompt, prepend_bullets, ContextFile, ProjectContext, PromptBuildError,
     SystemPromptBuilder, FRONTIER_MODEL_NAME, SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+};
+pub use rate_limit::{
+    RateLimitConfig, RateLimitDecision, RateLimiter,
 };
 pub use remote::{
     inherited_upstream_proxy_env, no_proxy_list, read_token, upstream_proxy_ws_url,

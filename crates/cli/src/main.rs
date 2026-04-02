@@ -1,11 +1,5 @@
-#![allow(
-    dead_code,
-    unused_imports,
-    unused_variables,
-    clippy::unneeded_struct_pattern,
-    clippy::unnecessary_wraps,
-    clippy::unused_self
-)]
+// Targeted clippy allows for valid architectural patterns
+#![allow(clippy::module_name_repetitions)]
 mod init;
 mod input;
 mod render;

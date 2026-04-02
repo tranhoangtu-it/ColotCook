@@ -237,6 +237,7 @@ pub struct McpHttpClient {
     client: Client,
     url: String,
     headers: BTreeMap<String, String>,
+    #[allow(dead_code)] // Reserved for future SSE connection authentication
     auth: McpClientAuth,
     server_name: String,
     token_manager: Option<McpOAuthTokenManager>,
@@ -462,6 +463,174 @@ impl McpHttpClient {
         let request = JsonRpcRequest::new(request_id, "tools/call", Some(params));
         self.send_request("tools/call", request, DEFAULT_MCP_TOOL_CALL_TIMEOUT_MS)
             .await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SSE (Server-Sent Events) support for MCP streaming
+// ---------------------------------------------------------------------------
+
+/// Parsed SSE event from an MCP server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SseEvent {
+    /// Event type (e.g., "message", "endpoint", "error").
+    pub event_type: Option<String>,
+    /// Event data payload.
+    pub data: String,
+    /// Event ID for resumption.
+    pub id: Option<String>,
+}
+
+/// Parse raw SSE text into a sequence of events.
+///
+/// Follows the SSE specification:
+/// - Lines starting with "event:" set the event type
+/// - Lines starting with "data:" append to data buffer
+/// - Lines starting with "id:" set the event ID
+/// - Empty lines dispatch the event
+/// - Lines starting with ":" are comments (ignored)
+#[must_use]
+pub fn parse_sse_events(raw: &str) -> Vec<SseEvent> {
+    let mut events = Vec::new();
+    let mut current_event_type: Option<String> = None;
+    let mut current_data = String::new();
+    let mut current_id: Option<String> = None;
+
+    for line in raw.lines() {
+        if line.is_empty() {
+            // Empty line = dispatch event
+            if !current_data.is_empty() {
+                // Remove trailing newline from data
+                if current_data.ends_with('\n') {
+                    current_data.pop();
+                }
+                events.push(SseEvent {
+                    event_type: current_event_type.take(),
+                    data: std::mem::take(&mut current_data),
+                    id: current_id.take(),
+                });
+            }
+            current_event_type = None;
+            current_id = None;
+        } else if let Some(comment) = line.strip_prefix(':') {
+            // Comment line - ignore (but could be used for keep-alive)
+            let _ = comment;
+        } else if let Some(value) = line.strip_prefix("event:") {
+            current_event_type = Some(value.trim().to_string());
+        } else if let Some(value) = line.strip_prefix("data:") {
+            if !current_data.is_empty() {
+                current_data.push('\n');
+            }
+            current_data.push_str(value.trim_start_matches(' '));
+        } else if let Some(value) = line.strip_prefix("id:") {
+            current_id = Some(value.trim().to_string());
+        }
+        // Lines without known field names are ignored per SSE spec
+    }
+
+    // Handle case where stream ends without trailing empty line
+    if !current_data.is_empty() {
+        if current_data.ends_with('\n') {
+            current_data.pop();
+        }
+        events.push(SseEvent {
+            event_type: current_event_type,
+            data: current_data,
+            id: current_id,
+        });
+    }
+
+    events
+}
+
+/// MCP-specific SSE event types.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpSseMessage {
+    /// Server endpoint for subsequent POST requests.
+    Endpoint(String),
+    /// JSON-RPC response message.
+    Message(String),
+    /// Ping/keep-alive.
+    Ping,
+    /// Error from server.
+    Error(String),
+}
+
+/// Classify parsed SSE events into MCP-specific message types.
+#[must_use]
+pub fn classify_mcp_sse_events(events: &[SseEvent]) -> Vec<McpSseMessage> {
+    events
+        .iter()
+        .filter_map(|event| {
+            match event.event_type.as_deref() {
+                Some("endpoint") => Some(McpSseMessage::Endpoint(event.data.clone())),
+                Some("message") | None => Some(McpSseMessage::Message(event.data.clone())),
+                Some("ping") => Some(McpSseMessage::Ping),
+                Some("error") => Some(McpSseMessage::Error(event.data.clone())),
+                _ => None, // Unknown event types are ignored
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod sse_tests {
+    use super::*;
+
+    #[test]
+    fn parse_single_sse_event() {
+        let raw = "data: {\"jsonrpc\":\"2.0\"}\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "{\"jsonrpc\":\"2.0\"}");
+        assert_eq!(events[0].event_type, None);
+    }
+
+    #[test]
+    fn parse_typed_sse_events() {
+        let raw = "event: endpoint\ndata: /mcp/session/abc123\n\nevent: message\ndata: {\"result\":\"ok\"}\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].event_type.as_deref(), Some("endpoint"));
+        assert_eq!(events[0].data, "/mcp/session/abc123");
+        assert_eq!(events[1].event_type.as_deref(), Some("message"));
+    }
+
+    #[test]
+    fn parse_multiline_data() {
+        let raw = "data: line1\ndata: line2\ndata: line3\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "line1\nline2\nline3");
+    }
+
+    #[test]
+    fn ignores_comments_and_unknown_fields() {
+        let raw = ": this is a comment\nunknown: field\ndata: hello\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "hello");
+    }
+
+    #[test]
+    fn classify_mcp_events() {
+        let events = vec![
+            SseEvent { event_type: Some("endpoint".into()), data: "/session/123".into(), id: None },
+            SseEvent { event_type: Some("message".into()), data: "{}".into(), id: None },
+            SseEvent { event_type: Some("ping".into()), data: "".into(), id: None },
+        ];
+        let classified = classify_mcp_sse_events(&events);
+        assert_eq!(classified.len(), 3);
+        assert!(matches!(&classified[0], McpSseMessage::Endpoint(url) if url == "/session/123"));
+        assert!(matches!(&classified[1], McpSseMessage::Message(_)));
+        assert!(matches!(&classified[2], McpSseMessage::Ping));
+    }
+
+    #[test]
+    fn handles_event_with_id() {
+        let raw = "id: evt-42\ndata: payload\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events[0].id.as_deref(), Some("evt-42"));
     }
 }
 

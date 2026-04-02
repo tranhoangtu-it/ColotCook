@@ -31,6 +31,7 @@ pub struct SandboxConfig {
     pub network_isolation: Option<bool>,
     pub filesystem_mode: Option<FilesystemIsolationMode>,
     pub allowed_mounts: Vec<String>,
+    pub resource_limits: Option<ResourceLimits>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -40,6 +41,7 @@ pub struct SandboxRequest {
     pub network_isolation: bool,
     pub filesystem_mode: FilesystemIsolationMode,
     pub allowed_mounts: Vec<String>,
+    pub resource_limits: ResourceLimits,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -62,6 +64,7 @@ pub struct SandboxStatus {
     pub filesystem_mode: FilesystemIsolationMode,
     pub filesystem_active: bool,
     pub allowed_mounts: Vec<String>,
+    pub resource_limits: ResourceLimits,
     pub in_container: bool,
     pub container_markers: Vec<String>,
     pub fallback_reason: Option<String>,
@@ -80,6 +83,33 @@ pub struct LinuxSandboxCommand {
     pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
+}
+
+/// Resource limits for sandboxed processes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResourceLimits {
+    /// Maximum CPU time in seconds (0 = unlimited).
+    pub max_cpu_seconds: u64,
+    /// Maximum memory in bytes (0 = unlimited).
+    pub max_memory_bytes: u64,
+    /// Maximum number of open file descriptors.
+    pub max_open_files: u64,
+    /// Maximum number of child processes.
+    pub max_processes: u64,
+    /// Maximum output file size in bytes.
+    pub max_file_size_bytes: u64,
+}
+
+impl Default for ResourceLimits {
+    fn default() -> Self {
+        Self {
+            max_cpu_seconds: 300,        // 5 minutes
+            max_memory_bytes: 512 * 1024 * 1024, // 512 MB
+            max_open_files: 256,
+            max_processes: 64,
+            max_file_size_bytes: 100 * 1024 * 1024, // 100 MB
+        }
+    }
 }
 
 impl SandboxConfig {
@@ -101,6 +131,7 @@ impl SandboxConfig {
                 .or(self.filesystem_mode)
                 .unwrap_or_default(),
             allowed_mounts: allowed_mounts_override.unwrap_or_else(|| self.allowed_mounts.clone()),
+            resource_limits: self.resource_limits.clone().unwrap_or_default(),
         }
     }
 }
@@ -201,6 +232,7 @@ pub fn resolve_sandbox_status_for_request(request: &SandboxRequest, cwd: &Path) 
         filesystem_mode: request.filesystem_mode,
         filesystem_active,
         allowed_mounts,
+        resource_limits: request.resource_limits.clone(),
         in_container: container.in_container,
         container_markers: container.markers,
         fallback_reason: (!fallback_reasons.is_empty()).then(|| fallback_reasons.join("; ")),
@@ -261,6 +293,33 @@ pub fn build_linux_sandbox_command(
     })
 }
 
+/// Build a shell command prefix that applies resource limits via `ulimit`.
+/// Returns an empty vec if no limits are configured.
+#[must_use]
+pub fn resource_limit_shell_prefix(limits: &ResourceLimits) -> Vec<String> {
+    let mut parts = Vec::new();
+    if limits.max_cpu_seconds > 0 {
+        parts.push(format!("ulimit -t {}", limits.max_cpu_seconds));
+    }
+    if limits.max_memory_bytes > 0 {
+        // ulimit -v uses KB
+        let kb = limits.max_memory_bytes / 1024;
+        parts.push(format!("ulimit -v {kb}"));
+    }
+    if limits.max_open_files > 0 {
+        parts.push(format!("ulimit -n {}", limits.max_open_files));
+    }
+    if limits.max_processes > 0 {
+        parts.push(format!("ulimit -u {}", limits.max_processes));
+    }
+    if limits.max_file_size_bytes > 0 {
+        // ulimit -f uses 512-byte blocks
+        let blocks = limits.max_file_size_bytes / 512;
+        parts.push(format!("ulimit -f {blocks}"));
+    }
+    parts
+}
+
 fn normalize_mounts(mounts: &[String], cwd: &Path) -> Vec<String> {
     let cwd = cwd.to_path_buf();
     mounts
@@ -280,6 +339,33 @@ fn normalize_mounts(mounts: &[String], cwd: &Path) -> Vec<String> {
 fn command_exists(command: &str) -> bool {
     env::var_os("PATH")
         .is_some_and(|paths| env::split_paths(&paths).any(|path| path.join(command).exists()))
+}
+
+/// Paths that should never be writable in a sandbox.
+const SENSITIVE_PATHS: &[&str] = &[
+    "/etc/passwd",
+    "/etc/shadow",
+    "/etc/sudoers",
+    "/root",
+    "/proc/sys",
+    "/sys",
+];
+
+/// Validate that allowed_mounts don't include sensitive system paths.
+pub fn validate_allowed_mounts(mounts: &[String]) -> Result<(), String> {
+    for mount in mounts {
+        let mount_path = Path::new(mount);
+        for sensitive in SENSITIVE_PATHS {
+            let sensitive_path = Path::new(sensitive);
+            if mount_path.starts_with(sensitive_path) || sensitive_path.starts_with(mount_path) {
+                return Err(format!(
+                    "mount path '{}' overlaps with sensitive system path '{}'",
+                    mount, sensitive
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -360,5 +446,102 @@ mod tests {
             assert!(launcher.args.iter().any(|arg| arg == "--mount"));
             assert!(launcher.args.iter().any(|arg| arg == "--net") == status.network_active);
         }
+    }
+
+    #[test]
+    fn validates_allowed_mounts_rejects_sensitive_paths() {
+        let result = super::validate_allowed_mounts(&["/etc/passwd".to_string()]);
+        assert!(result.is_err());
+
+        let result = super::validate_allowed_mounts(&["/root".to_string()]);
+        assert!(result.is_err());
+
+        let result = super::validate_allowed_mounts(&["/sys".to_string()]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validates_allowed_mounts_accepts_safe_paths() {
+        let result = super::validate_allowed_mounts(&["/home/user/data".to_string()]);
+        assert!(result.is_ok());
+
+        let result = super::validate_allowed_mounts(&["/tmp/workspace".to_string()]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn resource_limit_shell_prefix_builds_correct_commands() {
+        let limits = super::ResourceLimits {
+            max_cpu_seconds: 300,
+            max_memory_bytes: 512 * 1024 * 1024,
+            max_open_files: 256,
+            max_processes: 64,
+            max_file_size_bytes: 100 * 1024 * 1024,
+        };
+
+        let prefix = super::resource_limit_shell_prefix(&limits);
+        assert!(!prefix.is_empty());
+        assert!(prefix.iter().any(|p| p.contains("ulimit -t 300")));
+        assert!(prefix.iter().any(|p| p.contains("ulimit -v")));
+        assert!(prefix.iter().any(|p| p.contains("ulimit -n 256")));
+        assert!(prefix.iter().any(|p| p.contains("ulimit -u 64")));
+        assert!(prefix.iter().any(|p| p.contains("ulimit -f")));
+    }
+
+    #[test]
+    fn resource_limits_have_sane_defaults() {
+        let limits = super::ResourceLimits::default();
+        assert!(limits.max_cpu_seconds > 0, "CPU limit must be positive");
+        assert!(limits.max_cpu_seconds <= 3600, "CPU limit should be reasonable");
+        assert!(
+            limits.max_memory_bytes >= 64 * 1024 * 1024,
+            "Memory must be at least 64MB"
+        );
+        assert!(
+            limits.max_memory_bytes <= 8 * 1024 * 1024 * 1024,
+            "Memory should be reasonable"
+        );
+        assert!(limits.max_open_files >= 16, "Must allow some file descriptors");
+        assert!(limits.max_processes >= 4, "Must allow some processes");
+    }
+
+    #[test]
+    fn validate_mounts_rejects_etc_shadow() {
+        assert!(super::validate_allowed_mounts(&["/etc/shadow".to_string()]).is_err());
+        assert!(super::validate_allowed_mounts(&["/etc".to_string()]).is_err());
+    }
+
+    #[test]
+    fn validate_mounts_rejects_root() {
+        assert!(super::validate_allowed_mounts(&["/root".to_string()]).is_err());
+        assert!(super::validate_allowed_mounts(&["/root/.ssh".to_string()]).is_err());
+    }
+
+    #[test]
+    fn validate_mounts_rejects_proc_sys() {
+        assert!(super::validate_allowed_mounts(&["/proc/sys".to_string()]).is_err());
+        assert!(super::validate_allowed_mounts(&["/sys".to_string()]).is_err());
+    }
+
+    #[test]
+    fn validate_mounts_accepts_safe_paths() {
+        assert!(super::validate_allowed_mounts(&["/home/user/project".to_string()]).is_ok());
+        assert!(super::validate_allowed_mounts(&["/tmp".to_string()]).is_ok());
+        assert!(super::validate_allowed_mounts(&["/opt/myapp".to_string()]).is_ok());
+    }
+
+    #[test]
+    fn resource_limit_prefix_generates_ulimit_commands() {
+        let limits = super::ResourceLimits {
+            max_cpu_seconds: 60,
+            max_memory_bytes: 256 * 1024 * 1024,
+            max_open_files: 128,
+            max_processes: 32,
+            max_file_size_bytes: 50 * 1024 * 1024,
+        };
+        let prefix = super::resource_limit_shell_prefix(&limits);
+        assert!(prefix.iter().any(|s| s.contains("ulimit -t 60")));
+        assert!(prefix.iter().any(|s| s.contains("ulimit -n 128")));
+        assert!(prefix.iter().any(|s| s.contains("ulimit -u 32")));
     }
 }

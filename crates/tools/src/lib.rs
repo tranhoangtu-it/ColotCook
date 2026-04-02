@@ -8,7 +8,6 @@ use colotcook_api::{
     MessageRequest, MessageResponse, OutputContentBlock, ProviderClient,
     StreamEvent as ApiStreamEvent, ToolChoice, ToolDefinition, ToolResultContentBlock,
 };
-use colotcook_api as api;
 use colotcook_plugins::PluginTool;
 use reqwest::blocking::Client;
 use colotcook_runtime::{

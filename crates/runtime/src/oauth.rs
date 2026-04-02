@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -402,6 +402,8 @@ fn credentials_home_dir() -> io::Result<PathBuf> {
 fn read_credentials_root(path: &PathBuf) -> io::Result<Map<String, Value>> {
     match fs::read_to_string(path) {
         Ok(contents) => {
+            #[cfg(unix)]
+            warn_if_permissive(path);
             if contents.trim().is_empty() {
                 return Ok(Map::new());
             }
@@ -421,14 +423,93 @@ fn read_credentials_root(path: &PathBuf) -> io::Result<Map<String, Value>> {
     }
 }
 
+/// Warns if credential file has overly permissive permissions (Unix only).
+/// Returns Ok(()) always - this is advisory, not blocking.
+#[cfg(unix)]
+fn warn_if_permissive(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(metadata) = fs::metadata(path) {
+        let mode = metadata.permissions().mode();
+        if mode & 0o077 != 0 {
+            eprintln!(
+                "warning: {} has overly permissive mode {:04o}; fixing to 0600",
+                path.display(),
+                mode
+            );
+            let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+        }
+    }
+}
+
+fn acquire_credentials_lock(path: &Path) -> io::Result<File> {
+    let lock_path = path.with_extension("json.lock");
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(5);
+    loop {
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(file) => return Ok(file),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                // Check if lock is stale (older than 30 seconds)
+                if let Ok(metadata) = fs::metadata(&lock_path) {
+                    if let Ok(modified) = metadata.modified() {
+                        if modified.elapsed().unwrap_or_default() > std::time::Duration::from_secs(30)
+                        {
+                            let _ = fs::remove_file(&lock_path);
+                            continue;
+                        }
+                    }
+                }
+                if start.elapsed() > timeout {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "timed out waiting for credentials lock",
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn release_credentials_lock(path: &Path) {
+    let lock_path = path.with_extension("json.lock");
+    let _ = fs::remove_file(&lock_path);
+}
+
 fn write_credentials_root(path: &PathBuf, root: &Map<String, Value>) -> io::Result<()> {
+    let _lock = acquire_credentials_lock(path)?;
+    let result = write_credentials_root_inner(path, root);
+    release_credentials_lock(path);
+    result
+}
+
+fn write_credentials_root_inner(path: &PathBuf, root: &Map<String, Value>) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
+        // Set parent directory permissions to owner-only on Unix
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let dir_perms = fs::Permissions::from_mode(0o700);
+            let _ = fs::set_permissions(parent, dir_perms);
+        }
     }
     let rendered = serde_json::to_string_pretty(&Value::Object(root.clone()))
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let temp_path = path.with_extension("json.tmp");
     fs::write(&temp_path, format!("{rendered}\n"))?;
+    // Set restrictive permissions on temp file before rename
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = fs::Permissions::from_mode(0o600);
+        fs::set_permissions(&temp_path, perms)?;
+    }
     fs::rename(temp_path, path)
 }
 

@@ -1877,6 +1877,86 @@ fn render_skills_usage(unexpected: Option<&str>) -> String {
     lines.join("\n")
 }
 
+fn handle_cost(session: &Session) -> String {
+    let mut output = String::new();
+    output.push_str("## Token Usage\n\n");
+    output.push_str(&format!("- Total messages: {}\n", session.messages.len()));
+    output.push_str("\nNote: Detailed token usage requires access to UsageTracker from the runtime.\n");
+    output.push_str("To see actual token costs, integrate with the runtime's usage tracking system.\n");
+    output
+}
+
+fn handle_diff() -> String {
+    match std::process::Command::new("git")
+        .args(["diff", "--stat"])
+        .output()
+    {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stdout.is_empty() && stderr.is_empty() {
+                "No changes detected.".to_string()
+            } else if !stdout.is_empty() {
+                format!("```\n{stdout}```")
+            } else {
+                format!("Error: {stderr}")
+            }
+        }
+        Err(e) => format!("Failed to run git diff: {e}"),
+    }
+}
+
+fn handle_commit() -> String {
+    "Use: /commit is currently a placeholder.\n\nTo commit changes:\n1. Stage your changes with: git add <files>\n2. Run: git commit -m \"Your message\"\n\nFull git integration with automatic message generation coming soon.".to_string()
+}
+
+fn handle_debug_tool_call(session: &Session) -> String {
+    use runtime::ContentBlock;
+
+    for message in session.messages.iter().rev() {
+        for block in &message.blocks {
+            if let ContentBlock::ToolUse { id, name, input } = block {
+                let mut output = String::new();
+                output.push_str("## Last Tool Call\n\n");
+                output.push_str(&format!("- Tool: {name}\n"));
+                output.push_str(&format!("- ID: {id}\n"));
+                output.push_str(&format!("- Input:\n```json\n{input}\n```\n"));
+                return output;
+            }
+        }
+    }
+    "No tool calls found in session.".to_string()
+}
+
+fn handle_sandbox() -> String {
+    let mut output = String::new();
+    output.push_str("## Sandbox Status\n\n");
+    output.push_str("- Sandbox detection requires integration with runtime sandbox module\n");
+    output.push_str("- Working directory: ");
+    if let Ok(cwd) = std::env::current_dir() {
+        output.push_str(&cwd.display().to_string());
+    } else {
+        output.push_str("(unable to determine)");
+    }
+    output.push('\n');
+    output
+}
+
+fn handle_session(session: &Session) -> String {
+    let mut output = String::new();
+    output.push_str("## Session Info\n\n");
+    output.push_str(&format!("- Session ID: {}\n", session.session_id));
+    output.push_str(&format!("- Messages: {}\n", session.messages.len()));
+    output.push_str(&format!("- Version: {}\n", session.version));
+    if let Some(compaction) = &session.compaction {
+        output.push_str(&format!("- Compactions: {}\n", compaction.count));
+    }
+    if let Some(fork) = &session.fork {
+        output.push_str(&format!("- Forked from: {}\n", fork.parent_session_id));
+    }
+    output
+}
+
 #[must_use]
 pub fn handle_slash_command(
     input: &str,
@@ -1914,27 +1994,57 @@ pub fn handle_slash_command(
             message: render_slash_command_help(),
             session: session.clone(),
         }),
+        SlashCommand::Cost => {
+            Some(SlashCommandResult {
+                message: handle_cost(session),
+                session: session.clone(),
+            })
+        }
+        SlashCommand::Diff => {
+            Some(SlashCommandResult {
+                message: handle_diff(),
+                session: session.clone(),
+            })
+        }
+        SlashCommand::Commit => {
+            Some(SlashCommandResult {
+                message: handle_commit(),
+                session: session.clone(),
+            })
+        }
+        SlashCommand::DebugToolCall => {
+            Some(SlashCommandResult {
+                message: handle_debug_tool_call(session),
+                session: session.clone(),
+            })
+        }
+        SlashCommand::Sandbox => {
+            Some(SlashCommandResult {
+                message: handle_sandbox(),
+                session: session.clone(),
+            })
+        }
+        SlashCommand::Session { .. } => {
+            Some(SlashCommandResult {
+                message: handle_session(session),
+                session: session.clone(),
+            })
+        }
         SlashCommand::Status
         | SlashCommand::Bughunter { .. }
-        | SlashCommand::Commit
         | SlashCommand::Pr { .. }
         | SlashCommand::Issue { .. }
         | SlashCommand::Ultraplan { .. }
         | SlashCommand::Teleport { .. }
-        | SlashCommand::DebugToolCall
-        | SlashCommand::Sandbox
         | SlashCommand::Model { .. }
         | SlashCommand::Permissions { .. }
         | SlashCommand::Clear { .. }
-        | SlashCommand::Cost
         | SlashCommand::Resume { .. }
         | SlashCommand::Config { .. }
         | SlashCommand::Memory
         | SlashCommand::Init
-        | SlashCommand::Diff
         | SlashCommand::Version
         | SlashCommand::Export { .. }
-        | SlashCommand::Session { .. }
         | SlashCommand::Plugins { .. }
         | SlashCommand::Agents { .. }
         | SlashCommand::Skills { .. }

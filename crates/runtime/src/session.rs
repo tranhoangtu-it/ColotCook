@@ -412,9 +412,14 @@ impl Session {
             return Ok(());
         }
 
-        let mut file = OpenOptions::new().append(true).open(path)?;
-        writeln!(file, "{}", message_record(message).render())?;
-        Ok(())
+        acquire_session_lock(&path)?;
+        let result = (|| {
+            let mut file = OpenOptions::new().append(true).open(&path)?;
+            writeln!(file, "{}", message_record(message).render())?;
+            Ok::<(), SessionError>(())
+        })();
+        release_session_lock(&path);
+        result
     }
 
     fn meta_record(&self) -> Result<JsonValue, SessionError> {
@@ -843,6 +848,13 @@ fn generate_session_id() -> String {
 }
 
 fn write_atomic(path: &Path, contents: &str) -> Result<(), SessionError> {
+    acquire_session_lock(path)?;
+    let result = write_atomic_inner(path, contents);
+    release_session_lock(path);
+    result
+}
+
+fn write_atomic_inner(path: &Path, contents: &str) -> Result<(), SessionError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -920,6 +932,48 @@ fn cleanup_rotated_logs(path: &Path) -> Result<(), SessionError> {
         fs::remove_file(stale_path)?;
     }
     Ok(())
+}
+
+/// Acquire an advisory lock for the session file.
+fn acquire_session_lock(path: &Path) -> Result<(), SessionError> {
+    let lock_path = path.with_extension("lock");
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(10);
+    loop {
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(_) => return Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Check if lock is stale (older than 60 seconds)
+                if let Ok(metadata) = fs::metadata(&lock_path) {
+                    if let Ok(modified) = metadata.modified() {
+                        if modified.elapsed().unwrap_or_default()
+                            > std::time::Duration::from_secs(60)
+                        {
+                            let _ = fs::remove_file(&lock_path);
+                            continue;
+                        }
+                    }
+                }
+                if start.elapsed() > timeout {
+                    return Err(SessionError::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "timed out waiting for session file lock",
+                    )));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(error) => return Err(SessionError::Io(error)),
+        }
+    }
+}
+
+fn release_session_lock(path: &Path) {
+    let lock_path = path.with_extension("lock");
+    let _ = fs::remove_file(&lock_path);
 }
 
 #[cfg(test)]
@@ -1197,6 +1251,62 @@ mod tests {
 
         // then
         assert!(error.to_string().contains("unsupported block type"));
+    }
+
+    #[test]
+    fn concurrent_session_saves_do_not_corrupt() {
+        let dir = temp_session_dir();
+        let path = dir.join("concurrent.jsonl");
+
+        // Create initial session
+        let mut session = Session::new().with_persistence_path(&path);
+        session
+            .push_user_text("initial message")
+            .expect("initial push");
+        session.save_to_path(&path).expect("initial save");
+
+        // Simulate concurrent saves from multiple threads
+        let path_clone = path.clone();
+        let handles: Vec<_> = (0..4)
+            .map(|i| {
+                let p = path_clone.clone();
+                std::thread::spawn(move || {
+                    let mut s = Session::load_from_path(&p).expect("load session");
+                    s.push_user_text(format!("thread {i} message"))
+                        .expect("push");
+                    s.save_to_path(&p).expect("save");
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().expect("thread join");
+        }
+
+        // Verify file is valid and loadable
+        let loaded = Session::load_from_path(&path).expect("final load");
+        assert!(!loaded.messages.is_empty(), "session should have messages");
+        assert!(
+            loaded.messages.len() >= 2,
+            "at least initial + one thread message"
+        );
+
+        // Cleanup
+        fs::remove_file(&path).expect("test file cleanup");
+        fs::remove_dir(&dir).expect("test dir cleanup");
+    }
+
+    fn temp_session_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "colotcook-session-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).expect("create test dir");
+        dir
     }
 
     fn temp_session_path(label: &str) -> PathBuf {

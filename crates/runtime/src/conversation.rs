@@ -17,6 +17,8 @@ use crate::usage::{TokenUsage, UsageTracker};
 
 const DEFAULT_AUTO_COMPACTION_INPUT_TOKENS_THRESHOLD: u32 = 100_000;
 const AUTO_COMPACTION_THRESHOLD_ENV_VAR: &str = "COLOTCOOK_AUTO_COMPACT_INPUT_TOKENS";
+const DEFAULT_MAX_ITERATIONS: usize = 200;
+const DEFAULT_CONVERSATION_TIMEOUT_SECS: u64 = 30 * 60; // 30 minutes
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApiRequest {
@@ -76,23 +78,56 @@ impl Display for ToolError {
 
 impl std::error::Error for ToolError {}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RuntimeError {
-    message: String,
+/// Runtime error categories for better error handling and recovery.
+#[derive(Debug, Clone)]
+pub enum RuntimeError {
+    /// API communication failed (network, auth, rate limit).
+    Api { message: String, retryable: bool },
+    /// Tool execution failed.
+    Tool { tool_name: String, message: String },
+    /// Permission denied by policy or user.
+    Permission { tool_name: String, message: String },
+    /// Session persistence or loading failed.
+    Session(String),
+    /// Conversation exceeded iteration or time limits.
+    LimitExceeded(String),
+    /// Configuration error.
+    Config(String),
+    /// Hook execution failed.
+    Hook(String),
+    /// Generic/uncategorized error.
+    Other(String),
 }
 
 impl RuntimeError {
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
+        Self::Other(message.into())
+    }
+
+    #[must_use]
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, Self::Api { retryable: true, .. })
+    }
+
+    #[must_use]
+    pub fn message(&self) -> String {
+        self.to_string()
     }
 }
 
 impl Display for RuntimeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
+        match self {
+            Self::Api { message, .. } => write!(f, "API error: {message}"),
+            Self::Tool { tool_name, message } => write!(f, "tool '{tool_name}' failed: {message}"),
+            Self::Permission { tool_name, message } => write!(f, "permission denied for '{tool_name}': {message}"),
+            Self::Session(msg) => write!(f, "session error: {msg}"),
+            Self::LimitExceeded(msg) => write!(f, "limit exceeded: {msg}"),
+            Self::Config(msg) => write!(f, "configuration error: {msg}"),
+            Self::Hook(msg) => write!(f, "hook error: {msg}"),
+            Self::Other(msg) => write!(f, "{msg}"),
+        }
     }
 }
 
@@ -126,6 +161,10 @@ pub struct ConversationRuntime<C, T> {
     hook_abort_signal: HookAbortSignal,
     hook_progress_reporter: Option<Box<dyn HookProgressReporter>>,
     session_tracer: Option<SessionTracer>,
+    conversation_timeout: std::time::Duration,
+    conversation_started_at: Option<std::time::Instant>,
+    /// Signal for graceful shutdown. When set, the conversation loop exits cleanly.
+    shutdown_requested: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl<C, T> ConversationRuntime<C, T>
@@ -168,13 +207,16 @@ where
             tool_executor,
             permission_policy,
             system_prompt,
-            max_iterations: usize::MAX,
+            max_iterations: DEFAULT_MAX_ITERATIONS,
             usage_tracker,
             hook_runner: HookRunner::from_feature_config(feature_config),
             auto_compaction_input_tokens_threshold: auto_compaction_threshold_from_env(),
             hook_abort_signal: HookAbortSignal::default(),
             hook_progress_reporter: None,
             session_tracer: None,
+            conversation_timeout: std::time::Duration::from_secs(DEFAULT_CONVERSATION_TIMEOUT_SECS),
+            conversation_started_at: None,
+            shutdown_requested: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -208,6 +250,18 @@ where
     #[must_use]
     pub fn with_session_tracer(mut self, session_tracer: SessionTracer) -> Self {
         self.session_tracer = Some(session_tracer);
+        self
+    }
+
+    #[must_use]
+    pub fn with_conversation_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.conversation_timeout = timeout;
+        self
+    }
+
+    #[must_use]
+    pub fn with_shutdown_signal(mut self, signal: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Self {
+        self.shutdown_requested = signal;
         self
     }
 
@@ -292,21 +346,40 @@ where
         self.record_turn_started(&user_input);
         self.session
             .push_user_text(user_input)
-            .map_err(|error| RuntimeError::new(error.to_string()))?;
+            .map_err(|error| RuntimeError::Session(error.to_string()))?;
 
         let mut assistant_messages = Vec::new();
         let mut tool_results = Vec::new();
         let mut prompt_cache_events = Vec::new();
         let mut iterations = 0;
+        let turn_start = std::time::Instant::now();
+        if self.conversation_started_at.is_none() {
+            self.conversation_started_at = Some(turn_start);
+        }
 
         loop {
             iterations += 1;
             if iterations > self.max_iterations {
-                let error = RuntimeError::new(
-                    "conversation loop exceeded the maximum number of iterations",
+                let error = RuntimeError::LimitExceeded(
+                    "conversation loop exceeded the maximum number of iterations".to_string(),
                 );
                 self.record_turn_failed(iterations, &error);
                 return Err(error);
+            }
+
+            if let Some(started) = self.conversation_started_at {
+                if started.elapsed() > self.conversation_timeout {
+                    return Err(RuntimeError::LimitExceeded(format!(
+                        "conversation timed out after {} seconds",
+                        self.conversation_timeout.as_secs()
+                    )));
+                }
+            }
+
+            if self.shutdown_requested.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err(RuntimeError::Other(
+                    "conversation interrupted by shutdown signal".to_string(),
+                ));
             }
 
             let request = ApiRequest {
@@ -350,7 +423,7 @@ where
 
             self.session
                 .push_message(assistant_message.clone())
-                .map_err(|error| RuntimeError::new(error.to_string()))?;
+                .map_err(|error| RuntimeError::Session(error.to_string()))?;
             assistant_messages.push(assistant_message);
 
             if pending_tool_uses.is_empty() {
@@ -453,7 +526,7 @@ where
                 };
                 self.session
                     .push_message(result_message.clone())
-                    .map_err(|error| RuntimeError::new(error.to_string()))?;
+                    .map_err(|error| RuntimeError::Session(error.to_string()))?;
                 self.record_tool_finished(iterations, &result_message);
                 tool_results.push(result_message);
             }
@@ -688,12 +761,16 @@ fn build_assistant_message(
     flush_text_block(&mut text, &mut blocks);
 
     if !finished {
-        return Err(RuntimeError::new(
-            "assistant stream ended without a message stop event",
-        ));
+        return Err(RuntimeError::Api {
+            message: "assistant stream ended without a message stop event".to_string(),
+            retryable: true,
+        });
     }
     if blocks.is_empty() {
-        return Err(RuntimeError::new("assistant stream produced no content"));
+        return Err(RuntimeError::Api {
+            message: "assistant stream produced no content".to_string(),
+            retryable: false,
+        });
     }
 
     Ok((
