@@ -389,7 +389,13 @@ fn credentials_home_dir() -> io::Result<PathBuf> {
         return Ok(PathBuf::from(path));
     }
     let home = std::env::var_os("HOME")
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "neither HOME nor USERPROFILE is set",
+            )
+        })?;
     Ok(PathBuf::from(home).join(".claw"))
 }
 
