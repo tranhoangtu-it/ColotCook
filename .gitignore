@@ -1,0 +1,31 @@
+# Build artifacts
+target/
+
+# Agent session data
+.colotcook-agents/
+.clawd-agents/
+
+# Sandbox runtime directories
+.sandbox-tmp/
+.sandbox-home/
+
+# Claude Code local artifacts
+.claude/settings.local.json
+.claude/sessions/
+
+# Python
+__pycache__/
+
+# Project-specific
+archive/
+.omx/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

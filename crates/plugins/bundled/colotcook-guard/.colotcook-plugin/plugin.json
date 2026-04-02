@@ -1,0 +1,9 @@
+{
+  "name": "colotcook-guard",
+  "version": "0.1.0",
+  "description": "Safety guard plugin that blocks dangerous shell commands (rm -rf /, sudo, etc.)",
+  "defaultEnabled": true,
+  "hooks": {
+    "PreToolUse": ["./hooks/pre-guard.sh"]
+  }
+}
