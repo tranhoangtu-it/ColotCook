@@ -116,7 +116,7 @@ impl McpOAuthTokenManager {
         })
     }
 
-    /// Refresh the OAuth token using the refresh_token.
+    /// Refresh the OAuth token using the `refresh_token`.
     async fn refresh_token(&self, refresh_token: &str) -> Result<(), McpServerManagerError> {
         // Construct the token endpoint URL from auth_server_metadata_url
         let token_url = match &self.oauth_config.auth_server_metadata_url {
@@ -163,7 +163,7 @@ impl McpOAuthTokenManager {
             .map_err(|e| McpServerManagerError::Transport {
                 server_name: self.server_name.clone(),
                 method: "oauth_refresh",
-                source: io::Error::new(io::ErrorKind::Other, e.to_string()),
+                source: io::Error::other(e.to_string()),
             })?;
 
         if !response.status().is_success() {
@@ -172,10 +172,7 @@ impl McpOAuthTokenManager {
             return Err(McpServerManagerError::Transport {
                 server_name: self.server_name.clone(),
                 method: "oauth_refresh",
-                source: io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("token refresh failed: HTTP {status}: {body}"),
-                ),
+                source: io::Error::other(format!("token refresh failed: HTTP {status}: {body}")),
             });
         }
 
@@ -250,7 +247,7 @@ impl McpHttpClient {
         let client = Client::builder()
             .user_agent("colotcook/0.1")
             .build()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         let token_manager = if let McpClientAuth::OAuth(ref oauth_config) = transport.auth {
             if oauth_config.client_id.is_some() {
@@ -310,7 +307,7 @@ impl McpHttpClient {
             .await
     }
 
-    /// Internal implementation of send_request with retry logic.
+    /// Internal implementation of `send_request` with retry logic.
     fn send_request_internal<
         'a,
         P: serde::Serialize + Send + Sync + 'a,
@@ -354,7 +351,7 @@ impl McpHttpClient {
                     McpServerManagerError::Transport {
                         server_name: self.server_name.clone(),
                         method,
-                        source: io::Error::new(io::ErrorKind::Other, e.to_string()),
+                        source: io::Error::other(e.to_string()),
                     }
                 }
             })?;

@@ -4,7 +4,6 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use colotcook_plugins as plugins;
 use colotcook_plugins::{PluginError, PluginManager, PluginSummary};
 use colotcook_runtime as runtime;
 use colotcook_runtime::{compact_session, CompactionConfig, Session};

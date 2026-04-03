@@ -504,12 +504,10 @@ const DANGEROUS_PATTERNS: &[&str] = &[
 #[must_use]
 pub fn detect_dangerous_pattern(input: &str) -> Option<&'static str> {
     let normalized = input.to_lowercase();
-    for pattern in DANGEROUS_PATTERNS {
-        if normalized.contains(&pattern.to_lowercase()) {
-            return Some(pattern);
-        }
-    }
-    None
+    DANGEROUS_PATTERNS
+        .iter()
+        .find(|&pattern| normalized.contains(&pattern.to_lowercase()))
+        .map(|v| v as _)
 }
 
 /// Validate that a path doesn't escape the workspace via traversal.

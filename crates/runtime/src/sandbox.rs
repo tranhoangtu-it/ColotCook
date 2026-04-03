@@ -351,7 +351,7 @@ const SENSITIVE_PATHS: &[&str] = &[
     "/sys",
 ];
 
-/// Validate that allowed_mounts don't include sensitive system paths.
+/// Validate that `allowed_mounts` don't include sensitive system paths.
 pub fn validate_allowed_mounts(mounts: &[String]) -> Result<(), String> {
     for mount in mounts {
         let mount_path = Path::new(mount);
@@ -359,8 +359,7 @@ pub fn validate_allowed_mounts(mounts: &[String]) -> Result<(), String> {
             let sensitive_path = Path::new(sensitive);
             if mount_path.starts_with(sensitive_path) || sensitive_path.starts_with(mount_path) {
                 return Err(format!(
-                    "mount path '{}' overlaps with sensitive system path '{}'",
-                    mount, sensitive
+                    "mount path '{mount}' overlaps with sensitive system path '{sensitive}'"
                 ));
             }
         }

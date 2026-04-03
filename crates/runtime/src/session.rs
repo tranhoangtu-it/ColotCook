@@ -412,13 +412,13 @@ impl Session {
             return Ok(());
         }
 
-        acquire_session_lock(&path)?;
+        acquire_session_lock(path)?;
         let result = (|| {
-            let mut file = OpenOptions::new().append(true).open(&path)?;
+            let mut file = OpenOptions::new().append(true).open(path)?;
             writeln!(file, "{}", message_record(message).render())?;
             Ok::<(), SessionError>(())
         })();
-        release_session_lock(&path);
+        release_session_lock(path);
         result
     }
 

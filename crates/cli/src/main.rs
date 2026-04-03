@@ -24,13 +24,10 @@ use colotcook_api::{
     StreamEvent as ApiStreamEvent, ToolChoice, ToolDefinition, ToolResultContentBlock,
 };
 
-use colotcook_commands as commands;
 use colotcook_commands::{
     handle_agents_slash_command, handle_plugins_slash_command, handle_skills_slash_command,
-    render_slash_command_help, resume_supported_slash_commands, slash_command_specs,
-    validate_slash_command_input, SlashCommand,
+    render_slash_command_help, resume_supported_slash_commands, slash_command_specs, SlashCommand,
 };
-use colotcook_plugins as plugins;
 use colotcook_plugins::{PluginHooks, PluginManager, PluginManagerConfig, PluginRegistry};
 use colotcook_runtime as runtime;
 use colotcook_runtime::{
@@ -42,7 +39,6 @@ use colotcook_runtime::{
     PermissionPolicy, ProjectContext, PromptCacheEvent, RuntimeError, Session, TokenUsage,
     ToolError, ToolExecutor, UsageTracker,
 };
-use colotcook_tools as tools;
 use colotcook_tools::{GlobalToolRegistry, McpBridge};
 use init::initialize_repo;
 use render::{MarkdownStreamState, Spinner, TerminalRenderer};
@@ -1401,12 +1397,12 @@ fn run_resume_command(
         }
         SlashCommand::Unknown(name) => Err(format_unknown_slash_command(name).into()),
         SlashCommand::Bughunter { .. }
-        | SlashCommand::Commit { .. }
+        | SlashCommand::Commit
         | SlashCommand::Pr { .. }
         | SlashCommand::Issue { .. }
         | SlashCommand::Ultraplan { .. }
         | SlashCommand::Teleport { .. }
-        | SlashCommand::DebugToolCall { .. }
+        | SlashCommand::DebugToolCall
         | SlashCommand::Resume { .. }
         | SlashCommand::Model { .. }
         | SlashCommand::Permissions { .. }
@@ -3369,7 +3365,7 @@ fn build_runtime_plugin_state_with_loader(
     loader: &ConfigLoader,
     runtime_config: &runtime::RuntimeConfig,
 ) -> Result<RuntimePluginState, Box<dyn std::error::Error>> {
-    let plugin_manager = build_plugin_manager(&cwd, &loader, &runtime_config);
+    let plugin_manager = build_plugin_manager(cwd, loader, runtime_config);
     let plugin_registry = plugin_manager.plugin_registry()?;
     let plugin_hook_config =
         runtime_hook_config_from_plugin_hooks(plugin_registry.aggregated_hooks()?);
@@ -4860,7 +4856,7 @@ impl ToolExecutor for CliToolExecutor {
 }
 
 impl CliToolExecutor {
-    /// Execute an MCP tool call by delegating to the McpServerManager.
+    /// Execute an MCP tool call by delegating to the `McpServerManager`.
     ///
     /// Uses a dedicated tokio runtime (`mcp_runtime`) to avoid re-entrancy
     /// deadlocks with the API client's runtime.

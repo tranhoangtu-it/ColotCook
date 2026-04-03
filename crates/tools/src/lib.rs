@@ -1585,7 +1585,7 @@ const DEFAULT_AGENT_MAX_ITERATIONS: usize = 32;
 static GLOBAL_MCP_BRIDGE: std::sync::OnceLock<McpBridge> = std::sync::OnceLock::new();
 
 /// Register the MCP bridge so that sub-agents can access MCP tools.
-/// Should be called once from the CLI startup after the McpServerManager is created.
+/// Should be called once from the CLI startup after the `McpServerManager` is created.
 pub fn set_global_mcp_bridge(bridge: McpBridge) {
     let _ = GLOBAL_MCP_BRIDGE.set(bridge);
 }
@@ -1962,9 +1962,8 @@ impl AgentOrchestrator {
                     }
                 });
 
-            match handle {
-                Ok(h) => handles.push((manifest, h)),
-                Err(_) => {}
+            if let Ok(h) = handle {
+                handles.push((manifest, h))
             }
         }
 
@@ -2215,7 +2214,7 @@ impl ApiClient for ProviderRuntimeClient {
     }
 }
 
-/// Bridge for sub-agents to access MCP tools through the shared McpServerManager.
+/// Bridge for sub-agents to access MCP tools through the shared `McpServerManager`.
 #[derive(Clone)]
 pub struct McpBridge {
     manager: std::sync::Arc<std::sync::Mutex<runtime::McpServerManager>>,

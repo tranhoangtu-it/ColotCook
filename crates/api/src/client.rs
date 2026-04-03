@@ -106,12 +106,11 @@ impl ProviderClient {
         &self,
         request: &MessageRequest,
     ) -> Result<MessageResponse, ApiError> {
-        match self {
-            Self::Anthropic(client) => send_via_provider(client, request).await,
-            _ => {
-                let client = self.openai_compat_client().expect("non-Anthropic provider");
-                send_via_provider(client, request).await
-            }
+        if let Self::Anthropic(client) = self {
+            send_via_provider(client, request).await
+        } else {
+            let client = self.openai_compat_client().expect("non-Anthropic provider");
+            send_via_provider(client, request).await
         }
     }
 
@@ -119,16 +118,15 @@ impl ProviderClient {
         &self,
         request: &MessageRequest,
     ) -> Result<MessageStream, ApiError> {
-        match self {
-            Self::Anthropic(client) => stream_via_provider(client, request)
+        if let Self::Anthropic(client) = self {
+            stream_via_provider(client, request)
                 .await
-                .map(MessageStream::Anthropic),
-            _ => {
-                let client = self.openai_compat_client().expect("non-Anthropic provider");
-                stream_via_provider(client, request)
-                    .await
-                    .map(MessageStream::OpenAiCompat)
-            }
+                .map(MessageStream::Anthropic)
+        } else {
+            let client = self.openai_compat_client().expect("non-Anthropic provider");
+            stream_via_provider(client, request)
+                .await
+                .map(MessageStream::OpenAiCompat)
         }
     }
 }

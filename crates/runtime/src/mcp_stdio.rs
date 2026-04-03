@@ -410,7 +410,7 @@ impl McpServerManager {
         rt.block_on(Self::from_servers_async(servers))
     }
 
-    /// Async version of from_servers for use when a tokio runtime is available.
+    /// Async version of `from_servers` for use when a tokio runtime is available.
     pub async fn from_servers_async(servers: &BTreeMap<String, ScopedMcpServerConfig>) -> Self {
         let mut managed_servers = BTreeMap::new();
         let mut unsupported_servers = Vec::new();
