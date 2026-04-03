@@ -494,6 +494,8 @@ const DANGEROUS_PATTERNS: &[&str] = &[
     "chmod -R 777",
     "curl | sh",
     "curl | bash",
+    "| bash",
+    "| sh",
     "wget | sh",
     "wget | bash",
     "eval(",

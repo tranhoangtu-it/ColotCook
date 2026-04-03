@@ -68,12 +68,7 @@ pub fn log(level: LogLevel, component: &str, message: &str, fields: &[(&str, &st
             escape_json(message),
         );
         for (key, value) in fields {
-            let _ = write!(
-                json,
-                r#","{}":"{}""#,
-                escape_json(key),
-                escape_json(value)
-            );
+            let _ = write!(json, r#","{}":"{}""#, escape_json(key), escape_json(value));
         }
         json.push('}');
         eprintln!("{json}");

@@ -2529,86 +2529,37 @@ mod tests {
     }
 
     #[test]
-    fn ignores_unknown_or_runtime_bound_slash_commands() {
+    fn handles_and_ignores_expected_slash_commands() {
         let session = Session::new();
-        assert!(handle_slash_command("/unknown", &session, CompactionConfig::default()).is_none());
-        assert!(handle_slash_command("/status", &session, CompactionConfig::default()).is_none());
-        assert!(handle_slash_command("/sandbox", &session, CompactionConfig::default()).is_none());
-        assert!(
-            handle_slash_command("/bughunter", &session, CompactionConfig::default()).is_none()
-        );
-        assert!(handle_slash_command("/commit", &session, CompactionConfig::default()).is_none());
-        assert!(handle_slash_command("/pr", &session, CompactionConfig::default()).is_none());
-        assert!(handle_slash_command("/issue", &session, CompactionConfig::default()).is_none());
-        assert!(
-            handle_slash_command("/ultraplan", &session, CompactionConfig::default()).is_none()
-        );
-        assert!(
-            handle_slash_command("/teleport foo", &session, CompactionConfig::default()).is_none()
-        );
-        assert!(
-            handle_slash_command("/debug-tool-call", &session, CompactionConfig::default())
-                .is_none()
-        );
-        assert!(
-            handle_slash_command("/bughunter", &session, CompactionConfig::default()).is_none()
-        );
-        assert!(handle_slash_command("/commit", &session, CompactionConfig::default()).is_none());
-        assert!(handle_slash_command("/pr", &session, CompactionConfig::default()).is_none());
-        assert!(handle_slash_command("/issue", &session, CompactionConfig::default()).is_none());
-        assert!(
-            handle_slash_command("/ultraplan", &session, CompactionConfig::default()).is_none()
-        );
-        assert!(
-            handle_slash_command("/teleport foo", &session, CompactionConfig::default()).is_none()
-        );
-        assert!(
-            handle_slash_command("/debug-tool-call", &session, CompactionConfig::default())
-                .is_none()
-        );
-        assert!(
-            handle_slash_command("/model claude", &session, CompactionConfig::default()).is_none()
-        );
-        assert!(handle_slash_command(
-            "/permissions read-only",
-            &session,
-            CompactionConfig::default()
-        )
-        .is_none());
-        assert!(handle_slash_command("/clear", &session, CompactionConfig::default()).is_none());
-        assert!(
-            handle_slash_command("/clear --confirm", &session, CompactionConfig::default())
-                .is_none()
-        );
-        assert!(handle_slash_command("/cost", &session, CompactionConfig::default()).is_none());
-        assert!(handle_slash_command(
-            "/resume session.json",
-            &session,
-            CompactionConfig::default()
-        )
-        .is_none());
-        assert!(handle_slash_command(
-            "/resume session.jsonl",
-            &session,
-            CompactionConfig::default()
-        )
-        .is_none());
-        assert!(handle_slash_command("/config", &session, CompactionConfig::default()).is_none());
-        assert!(
-            handle_slash_command("/config env", &session, CompactionConfig::default()).is_none()
-        );
-        assert!(handle_slash_command("/diff", &session, CompactionConfig::default()).is_none());
-        assert!(handle_slash_command("/version", &session, CompactionConfig::default()).is_none());
-        assert!(
-            handle_slash_command("/export note.txt", &session, CompactionConfig::default())
-                .is_none()
-        );
-        assert!(
-            handle_slash_command("/session list", &session, CompactionConfig::default()).is_none()
-        );
-        assert!(
-            handle_slash_command("/plugins list", &session, CompactionConfig::default()).is_none()
-        );
+        let cfg = CompactionConfig::default();
+
+        // Commands handled by handle_slash_command (return Some)
+        assert!(handle_slash_command("/sandbox", &session, cfg.clone()).is_some());
+        assert!(handle_slash_command("/commit", &session, cfg.clone()).is_some());
+        assert!(handle_slash_command("/debug-tool-call", &session, cfg.clone()).is_some());
+        assert!(handle_slash_command("/cost", &session, cfg.clone()).is_some());
+        assert!(handle_slash_command("/diff", &session, cfg.clone()).is_some());
+        assert!(handle_slash_command("/session list", &session, cfg.clone()).is_some());
+
+        // Runtime-bound commands — NOT handled here (return None)
+        assert!(handle_slash_command("/unknown", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/status", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/bughunter", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/pr", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/issue", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/ultraplan", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/teleport foo", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/model claude", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/permissions read-only", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/clear", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/clear --confirm", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/resume session.json", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/resume session.jsonl", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/config", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/config env", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/version", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/export note.txt", &session, cfg.clone()).is_none());
+        assert!(handle_slash_command("/plugins list", &session, cfg).is_none());
     }
 
     #[test]

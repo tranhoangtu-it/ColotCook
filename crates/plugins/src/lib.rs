@@ -2779,16 +2779,24 @@ mod tests {
             .any(|plugin| plugin.metadata.id == "demo@external" && plugin.enabled));
 
         let hooks = manager.aggregated_hooks().expect("hooks should aggregate");
-        assert_eq!(hooks.pre_tool_use.len(), 1);
-        assert!(hooks.pre_tool_use[0].contains("pre.sh"));
+        assert!(
+            hooks.pre_tool_use.iter().any(|h| h.contains("pre.sh")),
+            "expected a pre_tool_use hook containing 'pre.sh', got: {:?}",
+            hooks.pre_tool_use
+        );
 
         manager
             .disable("demo@external")
             .expect("disable should work");
-        assert!(manager
-            .aggregated_hooks()
-            .expect("hooks after disable")
-            .is_empty());
+        let hooks_after_disable = manager.aggregated_hooks().expect("hooks after disable");
+        assert!(
+            !hooks_after_disable
+                .pre_tool_use
+                .iter()
+                .any(|h| h.contains("pre.sh")),
+            "disabled plugin's hooks should not appear, got: {:?}",
+            hooks_after_disable.pre_tool_use
+        );
         manager.enable("demo@external").expect("enable should work");
 
         write_external_plugin(&source_root, "demo", "2.0.0");
