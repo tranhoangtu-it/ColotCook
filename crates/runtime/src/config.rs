@@ -1530,4 +1530,21 @@ mod tests {
         assert!(config.state_for("missing", true));
         assert!(!config.state_for("missing", false));
     }
+
+    #[test]
+    fn config_error_parse_displays_message() {
+        use super::ConfigError;
+        let err = ConfigError::Parse("invalid JSON at line 5".to_string());
+        assert_eq!(err.to_string(), "invalid JSON at line 5");
+    }
+
+    #[test]
+    fn config_error_from_io_error_wraps_correctly() {
+        use std::io;
+        use super::ConfigError;
+        let io_err = io::Error::new(io::ErrorKind::NotFound, "config file missing");
+        let config_err = ConfigError::from(io_err);
+        assert!(matches!(config_err, ConfigError::Io(_)));
+        assert!(config_err.to_string().contains("config file missing"));
+    }
 }

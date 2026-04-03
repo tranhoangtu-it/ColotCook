@@ -2,18 +2,27 @@ use std::env::VarError;
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
 
+/// Error type for all API-layer failures, including auth, HTTP, JSON, and retry exhaustion.
 #[derive(Debug)]
 pub enum ApiError {
+    /// Required credential environment variables are absent for the given provider.
     MissingCredentials {
         provider: &'static str,
         env_vars: &'static [&'static str],
     },
+    /// A saved OAuth token has expired with no refresh token available.
     ExpiredOAuthToken,
+    /// Authentication was rejected by the remote server.
     Auth(String),
+    /// The credential environment variable exists but could not be read.
     InvalidApiKeyEnv(VarError),
+    /// Underlying HTTP transport error from `reqwest`.
     Http(reqwest::Error),
+    /// I/O error encountered while reading credentials or cache files.
     Io(std::io::Error),
+    /// JSON serialization/deserialization failure.
     Json(serde_json::Error),
+    /// The API returned a non-2xx HTTP status code.
     Api {
         status: reqwest::StatusCode,
         error_type: Option<String>,
@@ -21,11 +30,14 @@ pub enum ApiError {
         body: String,
         retryable: bool,
     },
+    /// All retry attempts failed; wraps the last underlying error.
     RetriesExhausted {
         attempts: u32,
         last_error: Box<ApiError>,
     },
+    /// An SSE frame did not conform to the expected format.
     InvalidSseFrame(&'static str),
+    /// Exponential backoff delay calculation overflowed for the given attempt.
     BackoffOverflow {
         attempt: u32,
         base_delay: Duration,
@@ -131,5 +143,60 @@ impl From<serde_json::Error> for ApiError {
 impl From<VarError> for ApiError {
     fn from(value: VarError) -> Self {
         Self::InvalidApiKeyEnv(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io;
+
+    #[test]
+    fn display_missing_credentials_single_var() {
+        let err = ApiError::missing_credentials("TestProvider", &["TEST_API_KEY"]);
+        let msg = err.to_string();
+        assert!(msg.contains("TestProvider"));
+        assert!(msg.contains("TEST_API_KEY"));
+    }
+
+    #[test]
+    fn display_missing_credentials_multiple_vars() {
+        let err = ApiError::missing_credentials("TestProvider", &["KEY_A", "KEY_B"]);
+        let msg = err.to_string();
+        assert!(msg.contains("KEY_A"));
+        assert!(msg.contains("KEY_B"));
+    }
+
+    #[test]
+    fn display_expired_oauth_token() {
+        let msg = ApiError::ExpiredOAuthToken.to_string();
+        assert!(msg.contains("expired"));
+    }
+
+    #[test]
+    fn display_retries_exhausted() {
+        let inner = ApiError::Auth("bad token".to_string());
+        let err = ApiError::RetriesExhausted {
+            attempts: 3,
+            last_error: Box::new(inner),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("3"));
+        assert!(msg.contains("bad token"));
+    }
+
+    #[test]
+    fn from_io_error_wraps_as_io_variant() {
+        let io_err = io::Error::new(io::ErrorKind::NotFound, "missing file");
+        let api_err = ApiError::from(io_err);
+        assert!(matches!(api_err, ApiError::Io(_)));
+        assert!(api_err.to_string().contains("missing file"));
+    }
+
+    #[test]
+    fn io_variant_is_not_retryable() {
+        let io_err = io::Error::new(io::ErrorKind::PermissionDenied, "denied");
+        let api_err = ApiError::from(io_err);
+        assert!(!api_err.is_retryable());
     }
 }
