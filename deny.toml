@@ -1,11 +1,17 @@
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
-notice = "warn"
+# Report known vulnerabilities as errors
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+
+# yaml-rust is unmaintained but pulled in transitively via syntect (colotcook-cli).
+# Ignored until syntect updates its dependency or an alternative is adopted.
+ignore = [
+    { id = "RUSTSEC-2024-0320", reason = "yaml-rust is an indirect dep via syntect; no safe upgrade available upstream" },
+    { id = "RUSTSEC-2025-0141", reason = "bincode v1 is an indirect dep via syntect; no safe upgrade available upstream" },
+]
 
 [licenses]
-unlicensed = "deny"
+# All allowed SPDX license identifiers
 allow = [
     "MIT",
     "Apache-2.0",
@@ -19,9 +25,14 @@ allow = [
     "OpenSSL",
     "BSL-1.0",
     "CC0-1.0",
-    "Ring",
+    "0BSD",
+    "CDLA-Permissive-2.0",
 ]
-copyleft = "deny"
+
+# ring uses a non-standard license expression; allow it via the exceptions list.
+exceptions = [
+    { allow = ["MIT", "ISC", "OpenSSL"], name = "ring" },
+]
 
 [bans]
 multiple-versions = "warn"
