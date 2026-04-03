@@ -109,7 +109,10 @@ impl ProviderClient {
         if let Self::Anthropic(client) = self {
             send_via_provider(client, request).await
         } else {
-            let client = self.openai_compat_client().expect("non-Anthropic provider");
+            // SAFETY: all non-Anthropic variants carry an OpenAiCompatClient
+            let client = self
+                .openai_compat_client()
+                .unwrap_or_else(|| unreachable!("non-Anthropic variant must be OpenAI-compat"));
             send_via_provider(client, request).await
         }
     }
@@ -123,7 +126,10 @@ impl ProviderClient {
                 .await
                 .map(MessageStream::Anthropic)
         } else {
-            let client = self.openai_compat_client().expect("non-Anthropic provider");
+            // SAFETY: all non-Anthropic variants carry an OpenAiCompatClient
+            let client = self
+                .openai_compat_client()
+                .unwrap_or_else(|| unreachable!("non-Anthropic variant must be OpenAI-compat"));
             stream_via_provider(client, request)
                 .await
                 .map(MessageStream::OpenAiCompat)

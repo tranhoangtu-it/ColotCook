@@ -455,7 +455,10 @@ impl AnthropicClient {
 
         Err(ApiError::RetriesExhausted {
             attempts,
-            last_error: Box::new(last_error.expect("retry loop must capture an error")),
+            last_error: Box::new(
+                last_error
+                    .unwrap_or_else(|| unreachable!("retry loop always captures an error")),
+            ),
         })
     }
 
