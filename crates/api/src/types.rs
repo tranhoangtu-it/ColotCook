@@ -1,7 +1,10 @@
+//! Shared request/response types for the Anthropic Messages API and compatible endpoints.
+
 use colotcook_runtime::{pricing_for_model, TokenUsage, UsageCostEstimate};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// A request sent to the Messages endpoint, covering model, messages, tools, and streaming flag.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MessageRequest {
     pub model: String,
@@ -18,6 +21,7 @@ pub struct MessageRequest {
 }
 
 impl MessageRequest {
+    /// Returns a copy of this request with `stream` set to `true`.
     #[must_use]
     pub fn with_streaming(mut self) -> Self {
         self.stream = true;
@@ -25,6 +29,7 @@ impl MessageRequest {
     }
 }
 
+/// A single conversation message with a role and one or more content blocks.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InputMessage {
     pub role: String,
@@ -32,6 +37,7 @@ pub struct InputMessage {
 }
 
 impl InputMessage {
+    /// Creates a user message containing a single plain-text block.
     #[must_use]
     pub fn user_text(text: impl Into<String>) -> Self {
         Self {
@@ -40,6 +46,7 @@ impl InputMessage {
         }
     }
 
+    /// Creates a user message returning the result of a tool call.
     #[must_use]
     pub fn user_tool_result(
         tool_use_id: impl Into<String>,
@@ -59,6 +66,7 @@ impl InputMessage {
     }
 }
 
+/// A content block that can appear inside an input message (text, tool use, or tool result).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum InputContentBlock {
@@ -78,6 +86,7 @@ pub enum InputContentBlock {
     },
 }
 
+/// Content block nested inside a tool-result input block (text or raw JSON value).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToolResultContentBlock {
@@ -85,6 +94,7 @@ pub enum ToolResultContentBlock {
     Json { value: Value },
 }
 
+/// JSON-Schema-based definition of a tool the model may call.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolDefinition {
     pub name: String,
@@ -93,6 +103,7 @@ pub struct ToolDefinition {
     pub input_schema: Value,
 }
 
+/// Controls which tool (if any) the model must call in its next turn.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToolChoice {
@@ -101,6 +112,7 @@ pub enum ToolChoice {
     Tool { name: String },
 }
 
+/// Completed response from the Messages API including content, model, stop reason, and usage.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MessageResponse {
     pub id: String,
@@ -119,12 +131,14 @@ pub struct MessageResponse {
 }
 
 impl MessageResponse {
+    /// Sums all token counts (input, output, cache creation, cache read).
     #[must_use]
     pub fn total_tokens(&self) -> u32 {
         self.usage.total_tokens()
     }
 }
 
+/// A content block produced by the model (text, tool use, extended thinking, or redacted thinking).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum OutputContentBlock {
@@ -147,6 +161,7 @@ pub enum OutputContentBlock {
     },
 }
 
+/// Token consumption breakdown for a single API call.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Usage {
     pub input_tokens: u32,
@@ -158,6 +173,7 @@ pub struct Usage {
 }
 
 impl Usage {
+    /// Returns the sum of all four token counters.
     #[must_use]
     pub const fn total_tokens(&self) -> u32 {
         self.input_tokens
@@ -166,6 +182,7 @@ impl Usage {
             + self.cache_read_input_tokens
     }
 
+    /// Converts to the runtime [`TokenUsage`] type used for cost estimation.
     #[must_use]
     pub const fn token_usage(&self) -> TokenUsage {
         TokenUsage {
@@ -176,6 +193,7 @@ impl Usage {
         }
     }
 
+    /// Estimates the USD cost of this usage based on known per-model pricing.
     #[must_use]
     pub fn estimated_cost_usd(&self, model: &str) -> UsageCostEstimate {
         let usage = self.token_usage();
@@ -186,17 +204,20 @@ impl Usage {
     }
 }
 
+/// First SSE event emitted when a streaming response begins; carries an initial `MessageResponse`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MessageStartEvent {
     pub message: MessageResponse,
 }
 
+/// SSE event emitted at the end of a streaming turn with final stop reason and cumulative usage.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MessageDeltaEvent {
     pub delta: MessageDelta,
     pub usage: Usage,
 }
 
+/// Incremental update to message-level metadata (stop reason and stop sequence).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageDelta {
     #[serde(default)]
@@ -205,18 +226,21 @@ pub struct MessageDelta {
     pub stop_sequence: Option<String>,
 }
 
+/// SSE event marking the beginning of a new content block in the stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContentBlockStartEvent {
     pub index: u32,
     pub content_block: OutputContentBlock,
 }
 
+/// SSE event carrying an incremental update for an in-progress content block.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContentBlockDeltaEvent {
     pub index: u32,
     pub delta: ContentBlockDelta,
 }
 
+/// An incremental chunk of text, JSON, thinking, or signature data within a streaming content block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlockDelta {
@@ -226,14 +250,17 @@ pub enum ContentBlockDelta {
     SignatureDelta { signature: String },
 }
 
+/// SSE event signalling that the content block at the given index is complete.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContentBlockStopEvent {
     pub index: u32,
 }
 
+/// SSE event signalling that the entire streaming response is complete.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageStopEvent {}
 
+/// Discriminated union of all possible SSE events in a streaming Messages API response.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamEvent {

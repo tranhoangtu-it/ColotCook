@@ -1,3 +1,5 @@
+//! Disk-backed cache that stores completed API responses and tracks Anthropic prompt-cache health.
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -16,6 +18,7 @@ const REQUEST_FINGERPRINT_PREFIX: &str = "v1";
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
+/// Tunable parameters for prompt-cache behaviour (TTLs, session ID, break threshold).
 #[derive(Debug, Clone)]
 pub struct PromptCacheConfig {
     pub session_id: String,
@@ -25,6 +28,7 @@ pub struct PromptCacheConfig {
 }
 
 impl PromptCacheConfig {
+    /// Creates a config with default TTLs for the given session identifier.
     #[must_use]
     pub fn new(session_id: impl Into<String>) -> Self {
         Self {
@@ -42,6 +46,7 @@ impl Default for PromptCacheConfig {
     }
 }
 
+/// Filesystem paths for all cache artifacts belonging to a single session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PromptCachePaths {
     pub root: PathBuf,
@@ -52,6 +57,7 @@ pub struct PromptCachePaths {
 }
 
 impl PromptCachePaths {
+    /// Constructs paths rooted under the configured cache directory for the given session ID.
     #[must_use]
     pub fn for_session(session_id: &str) -> Self {
         let root = base_cache_root();
@@ -66,12 +72,14 @@ impl PromptCachePaths {
         }
     }
 
+    /// Returns the path to the JSON file that stores the cached completion for `request_hash`.
     #[must_use]
     pub fn completion_entry_path(&self, request_hash: &str) -> PathBuf {
         self.completion_dir.join(format!("{request_hash}.json"))
     }
 }
 
+/// Cumulative statistics for prompt-cache usage within a session.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PromptCacheStats {
     pub tracked_requests: u64,
@@ -90,6 +98,7 @@ pub struct PromptCacheStats {
     pub last_cache_source: Option<String>,
 }
 
+/// Describes a detected prompt-cache invalidation event including whether it was expected.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CacheBreakEvent {
     pub unexpected: bool,
@@ -99,23 +108,27 @@ pub struct CacheBreakEvent {
     pub token_drop: u32,
 }
 
+/// The result of tracking a single API response, bundling any cache-break event with updated stats.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PromptCacheRecord {
     pub cache_break: Option<CacheBreakEvent>,
     pub stats: PromptCacheStats,
 }
 
+/// Thread-safe, disk-backed cache that persists completed API responses and tracks cache health.
 #[derive(Debug, Clone)]
 pub struct PromptCache {
     inner: Arc<Mutex<PromptCacheInner>>,
 }
 
 impl PromptCache {
+    /// Creates a new cache for the given session, loading any persisted state from disk.
     #[must_use]
     pub fn new(session_id: impl Into<String>) -> Self {
         Self::with_config(PromptCacheConfig::new(session_id))
     }
 
+    /// Creates a cache with explicit configuration, loading any persisted state from disk.
     #[must_use]
     pub fn with_config(config: PromptCacheConfig) -> Self {
         let paths = PromptCachePaths::for_session(&config.session_id);
@@ -131,16 +144,19 @@ impl PromptCache {
         }
     }
 
+    /// Returns the filesystem paths used by this cache instance.
     #[must_use]
     pub fn paths(&self) -> PromptCachePaths {
         self.lock().paths.clone()
     }
 
+    /// Returns a snapshot of the current prompt-cache statistics.
     #[must_use]
     pub fn stats(&self) -> PromptCacheStats {
         self.lock().stats.clone()
     }
 
+    /// Looks up a cached completion for the request; returns `None` on miss, version mismatch, or expiry.
     #[must_use]
     pub fn lookup_completion(&self, request: &MessageRequest) -> Option<MessageResponse> {
         let request_hash = request_hash_hex(request);
@@ -192,6 +208,7 @@ impl PromptCache {
         Some(entry.response)
     }
 
+    /// Records a completed response, persists it to disk, and returns cache-health metadata.
     #[must_use]
     pub fn record_response(
         &self,
@@ -201,6 +218,7 @@ impl PromptCache {
         self.record_usage_internal(request, &response.usage, Some(response))
     }
 
+    /// Records usage counters from a streaming response (no full response body to store).
     #[must_use]
     pub fn record_usage(&self, request: &MessageRequest, usage: &Usage) -> PromptCacheRecord {
         self.record_usage_internal(request, usage, None)

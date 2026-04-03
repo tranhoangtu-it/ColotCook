@@ -1,3 +1,5 @@
+//! Provider-agnostic client wrapper and streaming helpers.
+
 use crate::error::ApiError;
 use crate::prompt_cache::{PromptCache, PromptCacheRecord, PromptCacheStats};
 use crate::providers::anthropic::{self, AnthropicClient, AuthSource};
@@ -19,6 +21,7 @@ async fn stream_via_provider<P: Provider>(
     provider.stream_message(request).await
 }
 
+/// A unified client that dispatches to the appropriate provider backend based on the model name.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum ProviderClient {
@@ -30,10 +33,12 @@ pub enum ProviderClient {
 }
 
 impl ProviderClient {
+    /// Creates a client for the given model, reading credentials from environment variables.
     pub fn from_model(model: &str) -> Result<Self, ApiError> {
         Self::from_model_with_anthropic_auth(model, None)
     }
 
+    /// Creates a client, optionally supplying an explicit [`AuthSource`] for Anthropic requests.
     pub fn from_model_with_anthropic_auth(
         model: &str,
         anthropic_auth: Option<AuthSource>,
@@ -59,6 +64,7 @@ impl ProviderClient {
         }
     }
 
+    /// Returns which provider backend this client targets.
     #[must_use]
     pub const fn provider_kind(&self) -> ProviderKind {
         match self {
@@ -70,6 +76,7 @@ impl ProviderClient {
         }
     }
 
+    /// Attaches a prompt cache to this client (Anthropic only; no-op for other providers).
     #[must_use]
     pub fn with_prompt_cache(self, prompt_cache: PromptCache) -> Self {
         match self {
@@ -78,6 +85,7 @@ impl ProviderClient {
         }
     }
 
+    /// Returns accumulated prompt-cache statistics, if available for this provider.
     #[must_use]
     pub fn prompt_cache_stats(&self) -> Option<PromptCacheStats> {
         match self {
@@ -86,6 +94,7 @@ impl ProviderClient {
         }
     }
 
+    /// Takes and returns the most recent prompt-cache record, clearing it from internal state.
     #[must_use]
     pub fn take_last_prompt_cache_record(&self) -> Option<PromptCacheRecord> {
         match self {
@@ -102,6 +111,7 @@ impl ProviderClient {
         }
     }
 
+    /// Sends a non-streaming request and returns the complete response.
     pub async fn send_message(
         &self,
         request: &MessageRequest,
@@ -117,6 +127,7 @@ impl ProviderClient {
         }
     }
 
+    /// Opens a streaming response and returns a [`MessageStream`] for polling SSE events.
     pub async fn stream_message(
         &self,
         request: &MessageRequest,
@@ -137,6 +148,7 @@ impl ProviderClient {
     }
 }
 
+/// An active SSE stream from either the Anthropic or an OpenAI-compatible provider.
 #[derive(Debug)]
 pub enum MessageStream {
     Anthropic(anthropic::MessageStream),
@@ -144,6 +156,7 @@ pub enum MessageStream {
 }
 
 impl MessageStream {
+    /// Returns the server-assigned request ID from the response headers, if present.
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         match self {
@@ -152,6 +165,7 @@ impl MessageStream {
         }
     }
 
+    /// Polls the underlying SSE stream for the next event, returning `None` at end-of-stream.
     pub async fn next_event(&mut self) -> Result<Option<StreamEvent>, ApiError> {
         match self {
             Self::Anthropic(stream) => stream.next_event().await,
@@ -164,21 +178,25 @@ pub use anthropic::{
     oauth_token_is_expired, resolve_saved_oauth_token, resolve_startup_auth_source, OAuthTokenSet,
 };
 
+/// Returns the Anthropic API base URL (overridable via `ANTHROPIC_BASE_URL`).
 #[must_use]
 pub fn read_base_url() -> String {
     anthropic::read_base_url()
 }
 
+/// Returns the xAI API base URL (overridable via `XAI_BASE_URL`).
 #[must_use]
 pub fn read_xai_base_url() -> String {
     openai_compat::read_base_url(OpenAiCompatConfig::xai())
 }
 
+/// Returns the Gemini API base URL (overridable via `GEMINI_BASE_URL`).
 #[must_use]
 pub fn read_gemini_base_url() -> String {
     openai_compat::read_base_url(OpenAiCompatConfig::gemini())
 }
 
+/// Returns the Ollama API base URL (overridable via `OLLAMA_BASE_URL`).
 #[must_use]
 pub fn read_ollama_base_url() -> String {
     openai_compat::read_base_url(OpenAiCompatConfig::ollama())

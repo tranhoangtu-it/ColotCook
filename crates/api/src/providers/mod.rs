@@ -1,3 +1,5 @@
+//! Provider registry: model-alias resolution, provider detection, and the [`Provider`] trait.
+
 use std::future::Future;
 use std::pin::Pin;
 
@@ -7,22 +9,27 @@ use crate::types::{MessageRequest, MessageResponse};
 pub mod anthropic;
 pub mod openai_compat;
 
+/// Boxed, `Send`-capable future returned by provider methods.
 pub type ProviderFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, ApiError>> + Send + 'a>>;
 
+/// Trait implemented by each provider backend (Anthropic, OpenAI-compat, etc.).
 pub trait Provider {
     type Stream;
 
+    /// Sends a non-streaming request and awaits the complete response.
     fn send_message<'a>(
         &'a self,
         request: &'a MessageRequest,
     ) -> ProviderFuture<'a, MessageResponse>;
 
+    /// Opens a streaming response and returns the provider-specific stream handle.
     fn stream_message<'a>(
         &'a self,
         request: &'a MessageRequest,
     ) -> ProviderFuture<'a, Self::Stream>;
 }
 
+/// Identifies which backend a model routes to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderKind {
     Anthropic,
@@ -32,6 +39,7 @@ pub enum ProviderKind {
     Ollama,
 }
 
+/// Static metadata describing the auth and base-URL environment variables for a provider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderMetadata {
     pub provider: ProviderKind,
@@ -200,6 +208,7 @@ const MODEL_REGISTRY: &[(&str, ProviderMetadata)] = &[
     ),
 ];
 
+/// Expands a short model alias (e.g. `"sonnet"`) to its canonical model ID.
 #[must_use]
 pub fn resolve_model_alias(model: &str) -> String {
     let trimmed = model.trim();
@@ -242,6 +251,7 @@ pub fn resolve_model_alias(model: &str) -> String {
         .map_or_else(|| trimmed.to_string(), ToOwned::to_owned)
 }
 
+/// Returns the [`ProviderMetadata`] for a model name or alias, or `None` if unknown.
 #[must_use]
 pub fn metadata_for_model(model: &str) -> Option<ProviderMetadata> {
     let canonical = resolve_model_alias(model);
@@ -300,6 +310,7 @@ pub fn metadata_for_model(model: &str) -> Option<ProviderMetadata> {
     None
 }
 
+/// Detects the [`ProviderKind`] for a model, falling back to available credentials.
 #[must_use]
 pub fn detect_provider_kind(model: &str) -> ProviderKind {
     if let Some(metadata) = metadata_for_model(model) {
@@ -323,6 +334,7 @@ pub fn detect_provider_kind(model: &str) -> ProviderKind {
     ProviderKind::Anthropic
 }
 
+/// Returns the recommended `max_tokens` cap for the given model.
 #[must_use]
 pub fn max_tokens_for_model(model: &str) -> u32 {
     let canonical = resolve_model_alias(model);

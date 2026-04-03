@@ -1,3 +1,7 @@
+//! Core runtime library: conversation engine, tools, sessions, MCP, OAuth, sandbox, and telemetry.
+//!
+//! Re-exports the public surface of all runtime sub-modules for use by the CLI and API crates.
+
 mod bash;
 mod bootstrap;
 mod compact;

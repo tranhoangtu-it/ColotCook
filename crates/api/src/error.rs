@@ -45,6 +45,7 @@ pub enum ApiError {
 }
 
 impl ApiError {
+    /// Constructs a [`ApiError::MissingCredentials`] for the given provider and env-var list.
     #[must_use]
     pub const fn missing_credentials(
         provider: &'static str,
@@ -53,6 +54,7 @@ impl ApiError {
         Self::MissingCredentials { provider, env_vars }
     }
 
+    /// Returns `true` if this error can reasonably be retried (network timeouts, transient 5xx).
     #[must_use]
     pub fn is_retryable(&self) -> bool {
         match self {

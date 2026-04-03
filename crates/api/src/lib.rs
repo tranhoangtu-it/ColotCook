@@ -1,3 +1,7 @@
+//! HTTP client for communicating with AI provider APIs (Anthropic, OpenAI-compat, xAI, Gemini, Ollama).
+//!
+//! Re-exports the public surface of all sub-modules so callers only need to depend on this crate.
+
 mod client;
 mod error;
 mod prompt_cache;

@@ -1,3 +1,8 @@
+//! Telemetry sinks and session tracing for HTTP requests and analytics events.
+//!
+//! Provides [`TelemetrySink`] implementations for in-memory testing and JSONL file output,
+//! plus [`SessionTracer`] for structured per-session event recording.
+
 use std::fmt::{Debug, Formatter};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -15,6 +20,7 @@ pub const DEFAULT_RUNTIME: &str = "rust";
 pub const DEFAULT_AGENTIC_BETA: &str = "claude-code-20250219";
 pub const DEFAULT_PROMPT_CACHING_SCOPE_BETA: &str = "prompt-caching-scope-2026-01-05";
 
+/// Identifies the application making API requests (name, version, runtime).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientIdentity {
     pub app_name: String,
@@ -23,6 +29,7 @@ pub struct ClientIdentity {
 }
 
 impl ClientIdentity {
+    /// Creates a new identity with the given app name and version; runtime defaults to `"rust"`.
     #[must_use]
     pub fn new(app_name: impl Into<String>, app_version: impl Into<String>) -> Self {
         Self {
@@ -32,12 +39,14 @@ impl ClientIdentity {
         }
     }
 
+    /// Returns a copy with the runtime field replaced.
     #[must_use]
     pub fn with_runtime(mut self, runtime: impl Into<String>) -> Self {
         self.runtime = runtime.into();
         self
     }
 
+    /// Formats the `User-Agent` header value as `app_name/app_version`.
     #[must_use]
     pub fn user_agent(&self) -> String {
         format!("{}/{}", self.app_name, self.app_version)
@@ -50,6 +59,7 @@ impl Default for ClientIdentity {
     }
 }
 
+/// Header and body configuration for Anthropic API requests (version, betas, extra fields).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AnthropicRequestProfile {
     pub anthropic_version: String,
@@ -61,6 +71,7 @@ pub struct AnthropicRequestProfile {
 }
 
 impl AnthropicRequestProfile {
+    /// Creates a profile with default version and standard beta flags.
     #[must_use]
     pub fn new(client_identity: ClientIdentity) -> Self {
         Self {
@@ -74,6 +85,7 @@ impl AnthropicRequestProfile {
         }
     }
 
+    /// Appends a beta feature flag if not already present.
     #[must_use]
     pub fn with_beta(mut self, beta: impl Into<String>) -> Self {
         let beta = beta.into();
@@ -83,12 +95,14 @@ impl AnthropicRequestProfile {
         self
     }
 
+    /// Inserts an arbitrary key-value pair that will be merged into the JSON request body.
     #[must_use]
     pub fn with_extra_body(mut self, key: impl Into<String>, value: Value) -> Self {
         self.extra_body.insert(key.into(), value);
         self
     }
 
+    /// Returns the HTTP header name/value pairs that should be attached to every request.
     #[must_use]
     pub fn header_pairs(&self) -> Vec<(String, String)> {
         let mut headers = vec![
@@ -104,6 +118,7 @@ impl AnthropicRequestProfile {
         headers
     }
 
+    /// Serializes `request` to JSON and merges `extra_body` fields and beta flags into the object.
     pub fn render_json_body<T: Serialize>(&self, request: &T) -> Result<Value, serde_json::Error> {
         let mut body = serde_json::to_value(request)?;
         let object = body.as_object_mut().ok_or_else(|| {
@@ -131,6 +146,7 @@ impl Default for AnthropicRequestProfile {
     }
 }
 
+/// A namespaced analytics event with an action name and optional key-value properties.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AnalyticsEvent {
     pub namespace: String,
@@ -140,6 +156,7 @@ pub struct AnalyticsEvent {
 }
 
 impl AnalyticsEvent {
+    /// Creates an event with the given namespace and action, and an empty properties map.
     #[must_use]
     pub fn new(namespace: impl Into<String>, action: impl Into<String>) -> Self {
         Self {
@@ -149,6 +166,7 @@ impl AnalyticsEvent {
         }
     }
 
+    /// Inserts an additional property into this event.
     #[must_use]
     pub fn with_property(mut self, key: impl Into<String>, value: Value) -> Self {
         self.properties.insert(key.into(), value);
@@ -156,6 +174,7 @@ impl AnalyticsEvent {
     }
 }
 
+/// An immutable trace record emitted by [`SessionTracer`] for a named event within a session.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionTraceRecord {
     pub session_id: String,
@@ -166,6 +185,7 @@ pub struct SessionTraceRecord {
     pub attributes: Map<String, Value>,
 }
 
+/// All event variants that can be recorded through a [`TelemetrySink`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TelemetryEvent {
@@ -202,16 +222,20 @@ pub enum TelemetryEvent {
     SessionTrace(SessionTraceRecord),
 }
 
+/// Trait for recording telemetry events; must be `Send + Sync` for use across async tasks.
 pub trait TelemetrySink: Send + Sync {
+    /// Records a single telemetry event.
     fn record(&self, event: TelemetryEvent);
 }
 
+/// In-memory [`TelemetrySink`] that buffers events for test assertions.
 #[derive(Default)]
 pub struct MemoryTelemetrySink {
     events: Mutex<Vec<TelemetryEvent>>,
 }
 
 impl MemoryTelemetrySink {
+    /// Returns a snapshot of all recorded events.
     #[must_use]
     pub fn events(&self) -> Vec<TelemetryEvent> {
         self.events
@@ -230,6 +254,7 @@ impl TelemetrySink for MemoryTelemetrySink {
     }
 }
 
+/// [`TelemetrySink`] that appends events as newline-delimited JSON to a log file.
 pub struct JsonlTelemetrySink {
     path: PathBuf,
     file: Mutex<File>,
@@ -244,6 +269,7 @@ impl Debug for JsonlTelemetrySink {
 }
 
 impl JsonlTelemetrySink {
+    /// Opens (or creates) a JSONL log file at `path`, creating parent directories as needed.
     pub fn new(path: impl AsRef<Path>) -> Result<Self, std::io::Error> {
         let path = path.as_ref().to_path_buf();
         if let Some(parent) = path.parent() {
@@ -256,6 +282,7 @@ impl JsonlTelemetrySink {
         })
     }
 
+    /// Returns the path to the JSONL log file.
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
@@ -276,6 +303,7 @@ impl TelemetrySink for JsonlTelemetrySink {
     }
 }
 
+/// Emits structured trace records and HTTP lifecycle events for a single session.
 #[derive(Clone)]
 pub struct SessionTracer {
     session_id: String,
@@ -292,6 +320,7 @@ impl Debug for SessionTracer {
 }
 
 impl SessionTracer {
+    /// Creates a tracer that forwards events to `sink` under the given session identifier.
     #[must_use]
     pub fn new(session_id: impl Into<String>, sink: Arc<dyn TelemetrySink>) -> Self {
         Self {
@@ -301,11 +330,13 @@ impl SessionTracer {
         }
     }
 
+    /// Returns the session identifier associated with this tracer.
     #[must_use]
     pub fn session_id(&self) -> &str {
         &self.session_id
     }
 
+    /// Emits a named trace record with an auto-incrementing sequence number and current timestamp.
     pub fn record(&self, name: impl Into<String>, attributes: Map<String, Value>) {
         let record = SessionTraceRecord {
             session_id: self.session_id.clone(),
@@ -317,6 +348,7 @@ impl SessionTracer {
         self.sink.record(TelemetryEvent::SessionTrace(record));
     }
 
+    /// Records that an HTTP request attempt has started.
     pub fn record_http_request_started(
         &self,
         attempt: u32,
@@ -339,6 +371,7 @@ impl SessionTracer {
         );
     }
 
+    /// Records that an HTTP request attempt succeeded with the given status code.
     pub fn record_http_request_succeeded(
         &self,
         attempt: u32,
@@ -367,6 +400,7 @@ impl SessionTracer {
         self.record("http_request_succeeded", trace_attributes);
     }
 
+    /// Records that an HTTP request attempt failed, noting whether the error is retryable.
     pub fn record_http_request_failed(
         &self,
         attempt: u32,
@@ -394,6 +428,7 @@ impl SessionTracer {
         self.record("http_request_failed", trace_attributes);
     }
 
+    /// Emits an analytics event to the sink and also records it as a trace entry.
     pub fn record_analytics(&self, event: AnalyticsEvent) {
         let mut attributes = event.properties.clone();
         attributes.insert(
