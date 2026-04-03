@@ -10,14 +10,14 @@ use colotcook_api::{
     StreamEvent as ApiStreamEvent, ToolChoice, ToolDefinition, ToolResultContentBlock,
 };
 use colotcook_plugins::PluginTool;
-use reqwest::blocking::Client;
+use colotcook_runtime as runtime;
 use colotcook_runtime::{
     edit_file, execute_bash, glob_search, grep_search, load_system_prompt, read_file, write_file,
     ApiClient, ApiRequest, AssistantEvent, BashCommandInput, ContentBlock, ConversationMessage,
     ConversationRuntime, GrepSearchInput, MessageRole, PermissionMode, PermissionPolicy,
     PromptCacheEvent, RuntimeError, Session, ToolError, ToolExecutor,
 };
-use colotcook_runtime as runtime;
+use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -1875,10 +1875,7 @@ impl AgentOrchestrator {
     /// Spawn multiple agents in parallel and wait for all of them to complete.
     ///
     /// Returns results in the same order as the input requests.
-    pub fn run_parallel(
-        requests: Vec<AgentSpawnRequest>,
-        timeout: Duration,
-    ) -> Vec<AgentResult> {
+    pub fn run_parallel(requests: Vec<AgentSpawnRequest>, timeout: Duration) -> Vec<AgentResult> {
         let mut handles: Vec<(AgentOutput, std::thread::JoinHandle<()>)> = Vec::new();
 
         for req in requests {
@@ -1890,8 +1887,7 @@ impl AgentOrchestrator {
                 name: None,
             };
 
-            let normalized_subagent_type =
-                normalize_subagent_type(input.subagent_type.as_deref());
+            let normalized_subagent_type = normalize_subagent_type(input.subagent_type.as_deref());
             let model = resolve_agent_model(input.model.as_deref());
             let agent_id = make_agent_id();
             let output_dir = match agent_store_dir() {
@@ -2268,8 +2264,9 @@ impl McpBridge {
                     )));
                 }
                 match response.result {
-                    Some(call_result) => serde_json::to_string(&call_result)
-                        .map_err(|e| ToolError::new(format!("failed to serialize MCP result: {e}"))),
+                    Some(call_result) => serde_json::to_string(&call_result).map_err(|e| {
+                        ToolError::new(format!("failed to serialize MCP result: {e}"))
+                    }),
                     None => Err(ToolError::new("MCP tool call returned no result")),
                 }
             }
@@ -3728,7 +3725,9 @@ mod tests {
     use colotcook_api as api;
     use colotcook_api::OutputContentBlock;
     use colotcook_runtime as runtime;
-    use colotcook_runtime::{ApiRequest, AssistantEvent, ConversationRuntime, RuntimeError, Session};
+    use colotcook_runtime::{
+        ApiRequest, AssistantEvent, ConversationRuntime, RuntimeError, Session,
+    };
     use serde_json::json;
 
     fn env_lock() -> &'static Mutex<()> {

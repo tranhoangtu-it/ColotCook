@@ -3,15 +3,15 @@ use std::sync::Arc;
 use std::sync::{Mutex as StdMutex, OnceLock};
 use std::time::Duration;
 
+use colotcook_api as api;
 use colotcook_api::{
     AnthropicClient, ApiClient, ApiError, AuthSource, ContentBlockDelta, ContentBlockDeltaEvent,
     ContentBlockStartEvent, InputContentBlock, InputMessage, MessageDeltaEvent, MessageRequest,
     OutputContentBlock, PromptCache, PromptCacheConfig, ProviderClient, StreamEvent, ToolChoice,
     ToolDefinition,
 };
-use colotcook_api as api;
-use serde_json::json;
 use colotcook_telemetry::{ClientIdentity, MemoryTelemetrySink, SessionTracer, TelemetryEvent};
+use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;

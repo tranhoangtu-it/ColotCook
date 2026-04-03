@@ -20,9 +20,8 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 use colotcook_api as api;
 use colotcook_api::{
     resolve_startup_auth_source, AnthropicClient, AuthSource, ContentBlockDelta, InputContentBlock,
-    InputMessage, MessageRequest, MessageResponse, OutputContentBlock, PromptCache,
-    ProviderClient, StreamEvent as ApiStreamEvent, ToolChoice, ToolDefinition,
-    ToolResultContentBlock,
+    InputMessage, MessageRequest, MessageResponse, OutputContentBlock, PromptCache, ProviderClient,
+    StreamEvent as ApiStreamEvent, ToolChoice, ToolDefinition, ToolResultContentBlock,
 };
 
 use colotcook_commands as commands;
@@ -31,10 +30,9 @@ use colotcook_commands::{
     render_slash_command_help, resume_supported_slash_commands, slash_command_specs,
     validate_slash_command_input, SlashCommand,
 };
-use init::initialize_repo;
 use colotcook_plugins as plugins;
 use colotcook_plugins::{PluginHooks, PluginManager, PluginManagerConfig, PluginRegistry};
-use render::{MarkdownStreamState, Spinner, TerminalRenderer};
+use colotcook_runtime as runtime;
 use colotcook_runtime::{
     clear_oauth_credentials, generate_pkce_pair, generate_state, load_system_prompt,
     parse_oauth_callback_request_target, resolve_sandbox_status, save_oauth_credentials, ApiClient,
@@ -44,10 +42,11 @@ use colotcook_runtime::{
     PermissionPolicy, ProjectContext, PromptCacheEvent, RuntimeError, Session, TokenUsage,
     ToolError, ToolExecutor, UsageTracker,
 };
-use colotcook_runtime as runtime;
-use serde_json::json;
 use colotcook_tools as tools;
 use colotcook_tools::{GlobalToolRegistry, McpBridge};
+use init::initialize_repo;
+use render::{MarkdownStreamState, Spinner, TerminalRenderer};
+use serde_json::json;
 
 const DEFAULT_MODEL: &str = "claude-opus-4-6";
 fn max_tokens_for_model(model: &str) -> u32 {
@@ -5013,7 +5012,10 @@ fn print_help_to(out: &mut impl Write) -> io::Result<()> {
     writeln!(out, "  colotcook bootstrap-plan")?;
     writeln!(out, "  colotcook agents")?;
     writeln!(out, "  colotcook skills")?;
-    writeln!(out, "  colotcook system-prompt [--cwd PATH] [--date YYYY-MM-DD]")?;
+    writeln!(
+        out,
+        "  colotcook system-prompt [--cwd PATH] [--date YYYY-MM-DD]"
+    )?;
     writeln!(out, "  colotcook login")?;
     writeln!(out, "  colotcook logout")?;
     writeln!(out, "  colotcook init")?;
@@ -5068,7 +5070,10 @@ fn print_help_to(out: &mut impl Write) -> io::Result<()> {
         "  Use /session list in the REPL to browse managed sessions"
     )?;
     writeln!(out, "Examples:")?;
-    writeln!(out, "  colotcook --model claude-opus \"summarize this repo\"")?;
+    writeln!(
+        out,
+        "  colotcook --model claude-opus \"summarize this repo\""
+    )?;
     writeln!(
         out,
         "  colotcook --output-format json prompt \"explain src/main.rs\""
@@ -5115,21 +5120,21 @@ mod tests {
         InternalPromptProgressState, LiveCli, SlashCommand, StatusUsage, DEFAULT_MODEL,
     };
     use colotcook_api::{MessageResponse, OutputContentBlock, Usage};
-    use colotcook_runtime as runtime;
     use colotcook_plugins::{
         PluginManager, PluginManagerConfig, PluginTool, PluginToolDefinition, PluginToolPermission,
     };
+    use colotcook_runtime as runtime;
     use colotcook_runtime::{
         AssistantEvent, ConfigLoader, ContentBlock, ConversationMessage, McpServerManager,
         MessageRole, PermissionMode, Session,
     };
+    use colotcook_tools::GlobalToolRegistry;
     use serde_json::json;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::sync::{Mutex, MutexGuard, OnceLock};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
-    use colotcook_tools::GlobalToolRegistry;
 
     fn registry_with_plugin_tool() -> GlobalToolRegistry {
         GlobalToolRegistry::with_plugin_tools(vec![PluginTool::new(
@@ -6749,9 +6754,7 @@ UU conflicted.rs",
         let mcp_manager = std::sync::Arc::new(std::sync::Mutex::new(
             McpServerManager::from_runtime_config(&runtime_config),
         ));
-        let mcp_runtime = std::sync::Arc::new(
-            tokio::runtime::Runtime::new().expect("mcp runtime"),
-        );
+        let mcp_runtime = std::sync::Arc::new(tokio::runtime::Runtime::new().expect("mcp runtime"));
         let mut runtime = build_runtime_with_plugin_state(
             Session::new(),
             "runtime-plugin-lifecycle",

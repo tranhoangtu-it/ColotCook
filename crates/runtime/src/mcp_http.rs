@@ -26,7 +26,7 @@ use crate::mcp_stdio::{
     McpToolCallParams, McpToolCallResult,
 };
 use crate::oauth::{
-    load_mcp_oauth_credentials, save_mcp_oauth_credentials, clear_mcp_oauth_credentials,
+    clear_mcp_oauth_credentials, load_mcp_oauth_credentials, save_mcp_oauth_credentials,
     OAuthRefreshRequest, OAuthTokenSet,
 };
 
@@ -67,7 +67,9 @@ impl McpOAuthTokenManager {
             Err(e) => {
                 // Log but don't fail initialization; auth might be configured differently
                 #[cfg(debug_assertions)]
-                eprintln!("[MCP] warning: failed to load saved OAuth credentials for {server_name}: {e}");
+                eprintln!(
+                    "[MCP] warning: failed to load saved OAuth credentials for {server_name}: {e}"
+                );
             }
         }
 
@@ -145,10 +147,7 @@ impl McpOAuthTokenManager {
                 .ok_or_else(|| McpServerManagerError::Transport {
                     server_name: self.server_name.clone(),
                     method: "oauth_refresh",
-                    source: io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "client_id not configured",
-                    ),
+                    source: io::Error::new(io::ErrorKind::InvalidInput, "client_id not configured"),
                 })?
                 .clone(),
             scopes: vec![], // Keep existing scopes from saved token
@@ -180,16 +179,18 @@ impl McpOAuthTokenManager {
             });
         }
 
-        let new_token_set: OAuthTokenSet = response.json().await.map_err(|e| {
-            McpServerManagerError::Transport {
-                server_name: self.server_name.clone(),
-                method: "oauth_refresh",
-                source: io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("failed to parse token response: {e}"),
-                ),
-            }
-        })?;
+        let new_token_set: OAuthTokenSet =
+            response
+                .json()
+                .await
+                .map_err(|e| McpServerManagerError::Transport {
+                    server_name: self.server_name.clone(),
+                    method: "oauth_refresh",
+                    source: io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("failed to parse token response: {e}"),
+                    ),
+                })?;
 
         // Save the refreshed token and update the in-memory cache
         save_mcp_oauth_credentials(&self.server_name, &new_token_set).map_err(|e| {
@@ -254,9 +255,10 @@ impl McpHttpClient {
         let token_manager = if let McpClientAuth::OAuth(ref oauth_config) = transport.auth {
             if oauth_config.client_id.is_some() {
                 // Try to initialize the token manager, but don't fail if we can't load saved credentials
-                let manager = McpOAuthTokenManager::new(server_name, oauth_config.clone(), client.clone())
-                    .await
-                    .ok();
+                let manager =
+                    McpOAuthTokenManager::new(server_name, oauth_config.clone(), client.clone())
+                        .await
+                        .ok();
                 Some(manager)
             } else {
                 None
@@ -295,7 +297,10 @@ impl McpHttpClient {
 
     /// Send a JSON-RPC request and return the parsed response.
     /// Retries once on 401 (Unauthorized) by clearing cached OAuth tokens.
-    async fn send_request<P: serde::Serialize + Send + Sync + 'static, R: serde::de::DeserializeOwned + Send + 'static>(
+    async fn send_request<
+        P: serde::Serialize + Send + Sync + 'static,
+        R: serde::de::DeserializeOwned + Send + 'static,
+    >(
         &self,
         method: &'static str,
         request: JsonRpcRequest<P>,
@@ -306,27 +311,33 @@ impl McpHttpClient {
     }
 
     /// Internal implementation of send_request with retry logic.
-    fn send_request_internal<'a, P: serde::Serialize + Send + Sync + 'a, R: serde::de::DeserializeOwned + Send + 'a>(
+    fn send_request_internal<
+        'a,
+        P: serde::Serialize + Send + Sync + 'a,
+        R: serde::de::DeserializeOwned + Send + 'a,
+    >(
         &'a self,
         method: &'static str,
         request: JsonRpcRequest<P>,
         timeout_ms: u64,
         is_retry: bool,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<JsonRpcResponse<R>, McpServerManagerError>> + Send + 'a>> {
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<JsonRpcResponse<R>, McpServerManagerError>>
+                + Send
+                + 'a,
+        >,
+    > {
         Box::pin(async move {
-        let builder = self
-            .client
-            .post(&self.url)
-            .timeout(Duration::from_millis(timeout_ms))
-            .header("Content-Type", "application/json");
+            let builder = self
+                .client
+                .post(&self.url)
+                .timeout(Duration::from_millis(timeout_ms))
+                .header("Content-Type", "application/json");
 
-        let builder = self.apply_headers_and_auth(builder).await?;
+            let builder = self.apply_headers_and_auth(builder).await?;
 
-        let response = builder
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| {
+            let response = builder.json(&request).send().await.map_err(|e| {
                 if e.is_timeout() {
                     McpServerManagerError::Timeout {
                         server_name: self.server_name.clone(),
@@ -337,10 +348,7 @@ impl McpHttpClient {
                     McpServerManagerError::Transport {
                         server_name: self.server_name.clone(),
                         method,
-                        source: io::Error::new(
-                            io::ErrorKind::ConnectionRefused,
-                            e.to_string(),
-                        ),
+                        source: io::Error::new(io::ErrorKind::ConnectionRefused, e.to_string()),
                     }
                 } else {
                     McpServerManagerError::Transport {
@@ -351,36 +359,37 @@ impl McpHttpClient {
                 }
             })?;
 
-        // Handle 401 Unauthorized: clear the cached token and retry once
-        if response.status() == 401 && !is_retry {
-            if let Some(ref token_manager) = self.token_manager {
-                let _ = token_manager.clear().await;
+            // Handle 401 Unauthorized: clear the cached token and retry once
+            if response.status() == 401 && !is_retry {
+                if let Some(ref token_manager) = self.token_manager {
+                    let _ = token_manager.clear().await;
+                }
+                return self
+                    .send_request_internal(method, request, timeout_ms, true)
+                    .await;
             }
-            return self
-                .send_request_internal(method, request, timeout_ms, true)
-                .await;
-        }
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(McpServerManagerError::InvalidResponse {
-                server_name: self.server_name.clone(),
-                method,
-                details: format!("HTTP {status}: {body}"),
-            });
-        }
-
-        let parsed: JsonRpcResponse<R> =
-            response.json().await.map_err(|e| {
-                McpServerManagerError::InvalidResponse {
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                return Err(McpServerManagerError::InvalidResponse {
                     server_name: self.server_name.clone(),
                     method,
-                    details: format!("failed to parse JSON-RPC response: {e}"),
-                }
-            })?;
+                    details: format!("HTTP {status}: {body}"),
+                });
+            }
 
-        Ok(parsed)
+            let parsed: JsonRpcResponse<R> =
+                response
+                    .json()
+                    .await
+                    .map_err(|e| McpServerManagerError::InvalidResponse {
+                        server_name: self.server_name.clone(),
+                        method,
+                        details: format!("failed to parse JSON-RPC response: {e}"),
+                    })?;
+
+            Ok(parsed)
         }) // end Box::pin(async move { ... })
     }
 
@@ -615,9 +624,21 @@ mod sse_tests {
     #[test]
     fn classify_mcp_events() {
         let events = vec![
-            SseEvent { event_type: Some("endpoint".into()), data: "/session/123".into(), id: None },
-            SseEvent { event_type: Some("message".into()), data: "{}".into(), id: None },
-            SseEvent { event_type: Some("ping".into()), data: "".into(), id: None },
+            SseEvent {
+                event_type: Some("endpoint".into()),
+                data: "/session/123".into(),
+                id: None,
+            },
+            SseEvent {
+                event_type: Some("message".into()),
+                data: "{}".into(),
+                id: None,
+            },
+            SseEvent {
+                event_type: Some("ping".into()),
+                data: "".into(),
+                id: None,
+            },
         ];
         let classified = classify_mcp_sse_events(&events);
         assert_eq!(classified.len(), 3);
@@ -649,9 +670,9 @@ mod tests {
             headers_helper: None,
             auth: McpClientAuth::None,
         };
-        let client = tokio::runtime::Runtime::new().unwrap().block_on(
-            McpHttpClient::new("test-server", &transport),
-        );
+        let client = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(McpHttpClient::new("test-server", &transport));
         assert!(client.is_ok());
         let client = client.unwrap();
         assert_eq!(client.url, "http://localhost:8080/mcp");
@@ -672,9 +693,9 @@ mod tests {
             headers_helper: None,
             auth: McpClientAuth::OAuth(oauth_config),
         };
-        let client = tokio::runtime::Runtime::new().unwrap().block_on(
-            McpHttpClient::new("test-server", &transport),
-        );
+        let client = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(McpHttpClient::new("test-server", &transport));
         assert!(client.is_ok());
         let client = client.unwrap();
         assert!(client.token_manager.is_some());

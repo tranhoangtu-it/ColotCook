@@ -80,7 +80,9 @@ impl RateLimiter {
         let window = Duration::from_secs(60);
 
         // Clean up old request timestamps outside the window.
-        state.request_timestamps.retain(|ts| now.duration_since(*ts) < window);
+        state
+            .request_timestamps
+            .retain(|ts| now.duration_since(*ts) < window);
 
         // Check request count limit.
         if state.request_timestamps.len() >= self.config.max_requests_per_minute as usize {

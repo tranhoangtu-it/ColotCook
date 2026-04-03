@@ -103,7 +103,7 @@ pub struct ResourceLimits {
 impl Default for ResourceLimits {
     fn default() -> Self {
         Self {
-            max_cpu_seconds: 300,        // 5 minutes
+            max_cpu_seconds: 300,                // 5 minutes
             max_memory_bytes: 512 * 1024 * 1024, // 512 MB
             max_open_files: 256,
             max_processes: 64,
@@ -493,7 +493,10 @@ mod tests {
     fn resource_limits_have_sane_defaults() {
         let limits = super::ResourceLimits::default();
         assert!(limits.max_cpu_seconds > 0, "CPU limit must be positive");
-        assert!(limits.max_cpu_seconds <= 3600, "CPU limit should be reasonable");
+        assert!(
+            limits.max_cpu_seconds <= 3600,
+            "CPU limit should be reasonable"
+        );
         assert!(
             limits.max_memory_bytes >= 64 * 1024 * 1024,
             "Memory must be at least 64MB"
@@ -502,7 +505,10 @@ mod tests {
             limits.max_memory_bytes <= 8 * 1024 * 1024 * 1024,
             "Memory should be reasonable"
         );
-        assert!(limits.max_open_files >= 16, "Must allow some file descriptors");
+        assert!(
+            limits.max_open_files >= 16,
+            "Must allow some file descriptors"
+        );
         assert!(limits.max_processes >= 4, "Must allow some processes");
     }
 

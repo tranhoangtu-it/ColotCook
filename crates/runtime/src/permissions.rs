@@ -485,7 +485,7 @@ fn extract_permission_subject(input: &str) -> Option<String> {
 const DANGEROUS_PATTERNS: &[&str] = &[
     "rm -rf /",
     "rm -rf ~",
-    ":(){ :|:& };:",  // fork bomb
+    ":(){ :|:& };:", // fork bomb
     "> /dev/sda",
     "mkfs.",
     "dd if=/dev",
@@ -524,12 +524,7 @@ pub fn validate_path_traversal(path: &str) -> bool {
 }
 
 /// Log a permission decision for audit trail.
-pub fn log_permission_decision(
-    tool_name: &str,
-    subject: Option<&str>,
-    decision: &str,
-    mode: &str,
-) {
+pub fn log_permission_decision(tool_name: &str, subject: Option<&str>, decision: &str, mode: &str) {
     // Use eprintln for now; can be upgraded to structured logging later
     if std::env::var("COLOTCOOK_AUDIT_LOG").is_ok() {
         let timestamp = std::time::SystemTime::now()
@@ -813,7 +808,9 @@ mod tests {
     #[test]
     fn path_traversal_allows_safe_paths() {
         assert!(super::validate_path_traversal("src/main.rs"));
-        assert!(super::validate_path_traversal("/home/user/project/file.txt"));
+        assert!(super::validate_path_traversal(
+            "/home/user/project/file.txt"
+        ));
         assert!(super::validate_path_traversal("./relative/path"));
     }
 }

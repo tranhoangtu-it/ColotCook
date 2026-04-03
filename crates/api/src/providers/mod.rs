@@ -204,7 +204,10 @@ const MODEL_REGISTRY: &[(&str, ProviderMetadata)] = &[
 pub fn resolve_model_alias(model: &str) -> String {
     let trimmed = model.trim();
     // Strip "ollama:" prefix — Ollama models use the tag after the colon
-    if let Some(ollama_model) = trimmed.strip_prefix("ollama:").or_else(|| trimmed.strip_prefix("OLLAMA:")) {
+    if let Some(ollama_model) = trimmed
+        .strip_prefix("ollama:")
+        .or_else(|| trimmed.strip_prefix("OLLAMA:"))
+    {
         return ollama_model.to_string();
     }
     let lower = trimmed.to_ascii_lowercase();
@@ -285,7 +288,8 @@ pub fn metadata_for_model(model: &str) -> Option<ProviderMetadata> {
         });
     }
     // Detect "ollama:" prefix for explicit Ollama model selection (e.g. "ollama:llama3")
-    if canonical.starts_with("ollama:") || model.trim().to_ascii_lowercase().starts_with("ollama:") {
+    if canonical.starts_with("ollama:") || model.trim().to_ascii_lowercase().starts_with("ollama:")
+    {
         return Some(ProviderMetadata {
             provider: ProviderKind::Ollama,
             auth_env: "OLLAMA_API_KEY",
@@ -308,8 +312,7 @@ pub fn detect_provider_kind(model: &str) -> ProviderKind {
     if openai_compat::has_api_key("OPENAI_API_KEY") {
         return ProviderKind::OpenAi;
     }
-    if openai_compat::has_api_key("GEMINI_API_KEY")
-        || openai_compat::has_api_key("GOOGLE_API_KEY")
+    if openai_compat::has_api_key("GEMINI_API_KEY") || openai_compat::has_api_key("GOOGLE_API_KEY")
     {
         return ProviderKind::Gemini;
     }

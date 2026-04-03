@@ -4,10 +4,10 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use colotcook_plugins::{PluginError, PluginManager, PluginSummary};
 use colotcook_plugins as plugins;
-use colotcook_runtime::{compact_session, CompactionConfig, Session};
+use colotcook_plugins::{PluginError, PluginManager, PluginSummary};
 use colotcook_runtime as runtime;
+use colotcook_runtime::{compact_session, CompactionConfig, Session};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandManifestEntry {
@@ -1881,8 +1881,12 @@ fn handle_cost(session: &Session) -> String {
     let mut output = String::new();
     output.push_str("## Token Usage\n\n");
     output.push_str(&format!("- Total messages: {}\n", session.messages.len()));
-    output.push_str("\nNote: Detailed token usage requires access to UsageTracker from the runtime.\n");
-    output.push_str("To see actual token costs, integrate with the runtime's usage tracking system.\n");
+    output.push_str(
+        "\nNote: Detailed token usage requires access to UsageTracker from the runtime.\n",
+    );
+    output.push_str(
+        "To see actual token costs, integrate with the runtime's usage tracking system.\n",
+    );
     output
 }
 
@@ -1994,42 +1998,30 @@ pub fn handle_slash_command(
             message: render_slash_command_help(),
             session: session.clone(),
         }),
-        SlashCommand::Cost => {
-            Some(SlashCommandResult {
-                message: handle_cost(session),
-                session: session.clone(),
-            })
-        }
-        SlashCommand::Diff => {
-            Some(SlashCommandResult {
-                message: handle_diff(),
-                session: session.clone(),
-            })
-        }
-        SlashCommand::Commit => {
-            Some(SlashCommandResult {
-                message: handle_commit(),
-                session: session.clone(),
-            })
-        }
-        SlashCommand::DebugToolCall => {
-            Some(SlashCommandResult {
-                message: handle_debug_tool_call(session),
-                session: session.clone(),
-            })
-        }
-        SlashCommand::Sandbox => {
-            Some(SlashCommandResult {
-                message: handle_sandbox(),
-                session: session.clone(),
-            })
-        }
-        SlashCommand::Session { .. } => {
-            Some(SlashCommandResult {
-                message: handle_session(session),
-                session: session.clone(),
-            })
-        }
+        SlashCommand::Cost => Some(SlashCommandResult {
+            message: handle_cost(session),
+            session: session.clone(),
+        }),
+        SlashCommand::Diff => Some(SlashCommandResult {
+            message: handle_diff(),
+            session: session.clone(),
+        }),
+        SlashCommand::Commit => Some(SlashCommandResult {
+            message: handle_commit(),
+            session: session.clone(),
+        }),
+        SlashCommand::DebugToolCall => Some(SlashCommandResult {
+            message: handle_debug_tool_call(session),
+            session: session.clone(),
+        }),
+        SlashCommand::Sandbox => Some(SlashCommandResult {
+            message: handle_sandbox(),
+            session: session.clone(),
+        }),
+        SlashCommand::Session { .. } => Some(SlashCommandResult {
+            message: handle_session(session),
+            session: session.clone(),
+        }),
         SlashCommand::Status
         | SlashCommand::Bughunter { .. }
         | SlashCommand::Pr { .. }

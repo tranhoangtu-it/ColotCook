@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 
-use serde_json::{Map, Value};
 use colotcook_telemetry::SessionTracer;
+use serde_json::{Map, Value};
 
 use crate::compact::{
     compact_session, estimate_session_tokens, CompactionConfig, CompactionResult,
@@ -107,7 +107,13 @@ impl RuntimeError {
 
     #[must_use]
     pub fn is_retryable(&self) -> bool {
-        matches!(self, Self::Api { retryable: true, .. })
+        matches!(
+            self,
+            Self::Api {
+                retryable: true,
+                ..
+            }
+        )
     }
 
     #[must_use]
@@ -121,7 +127,9 @@ impl Display for RuntimeError {
         match self {
             Self::Api { message, .. } => write!(f, "API error: {message}"),
             Self::Tool { tool_name, message } => write!(f, "tool '{tool_name}' failed: {message}"),
-            Self::Permission { tool_name, message } => write!(f, "permission denied for '{tool_name}': {message}"),
+            Self::Permission { tool_name, message } => {
+                write!(f, "permission denied for '{tool_name}': {message}")
+            }
             Self::Session(msg) => write!(f, "session error: {msg}"),
             Self::LimitExceeded(msg) => write!(f, "limit exceeded: {msg}"),
             Self::Config(msg) => write!(f, "configuration error: {msg}"),
@@ -260,7 +268,10 @@ where
     }
 
     #[must_use]
-    pub fn with_shutdown_signal(mut self, signal: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Self {
+    pub fn with_shutdown_signal(
+        mut self,
+        signal: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Self {
         self.shutdown_requested = signal;
         self
     }
@@ -376,7 +387,10 @@ where
                 }
             }
 
-            if self.shutdown_requested.load(std::sync::atomic::Ordering::Relaxed) {
+            if self
+                .shutdown_requested
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
                 return Err(RuntimeError::Other(
                     "conversation interrupted by shutdown signal".to_string(),
                 ));

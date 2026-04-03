@@ -164,7 +164,8 @@ pub(crate) fn render_init_claude_md(cwd: &Path) -> String {
     let mut lines = vec![
         "# CLAUDE.md".to_string(),
         String::new(),
-        "This file provides guidance to ColotCook when working with code in this repository.".to_string(),
+        "This file provides guidance to ColotCook when working with code in this repository."
+            .to_string(),
         String::new(),
     ];
 

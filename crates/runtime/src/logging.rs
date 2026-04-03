@@ -67,7 +67,11 @@ pub fn log(level: LogLevel, component: &str, message: &str, fields: &[(&str, &st
             escape_json(message),
         );
         for (key, value) in fields {
-            json.push_str(&format!(r#","{}":"{}""#, escape_json(key), escape_json(value)));
+            json.push_str(&format!(
+                r#","{}":"{}""#,
+                escape_json(key),
+                escape_json(value)
+            ));
         }
         json.push('}');
         eprintln!("{json}");
@@ -75,10 +79,7 @@ pub fn log(level: LogLevel, component: &str, message: &str, fields: &[(&str, &st
         let fields_str = if fields.is_empty() {
             String::new()
         } else {
-            let pairs: Vec<String> = fields
-                .iter()
-                .map(|(k, v)| format!("{k}={v}"))
-                .collect();
+            let pairs: Vec<String> = fields.iter().map(|(k, v)| format!("{k}={v}")).collect();
             format!(" {}", pairs.join(" "))
         };
         eprintln!("[{timestamp}] {level} [{component}] {message}{fields_str}");

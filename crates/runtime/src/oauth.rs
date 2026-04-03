@@ -300,14 +300,12 @@ pub fn load_mcp_oauth_credentials(server_name: &str) -> io::Result<Option<OAuthT
     if mcp_servers.is_null() {
         return Ok(None);
     }
-    let servers_map = mcp_servers
-        .as_object()
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "mcpServers must be a JSON object",
-            )
-        })?;
+    let servers_map = mcp_servers.as_object().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "mcpServers must be a JSON object",
+        )
+    })?;
     let Some(server_creds) = servers_map.get(server_name) else {
         return Ok(None);
     };
@@ -325,14 +323,12 @@ pub fn save_mcp_oauth_credentials(server_name: &str, token_set: &OAuthTokenSet) 
     let mcp_servers = root
         .entry("mcpServers".to_string())
         .or_insert_with(|| serde_json::json!({}));
-    let servers_map = mcp_servers
-        .as_object_mut()
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "mcpServers must be a JSON object",
-            )
-        })?;
+    let servers_map = mcp_servers.as_object_mut().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "mcpServers must be a JSON object",
+        )
+    })?;
     servers_map.insert(
         server_name.to_string(),
         serde_json::to_value(StoredOAuthCredentials::from(token_set.clone()))
@@ -460,7 +456,8 @@ fn acquire_credentials_lock(path: &Path) -> io::Result<File> {
                 // Check if lock is stale (older than 30 seconds)
                 if let Ok(metadata) = fs::metadata(&lock_path) {
                     if let Ok(modified) = metadata.modified() {
-                        if modified.elapsed().unwrap_or_default() > std::time::Duration::from_secs(30)
+                        if modified.elapsed().unwrap_or_default()
+                            > std::time::Duration::from_secs(30)
                         {
                             let _ = fs::remove_file(&lock_path);
                             continue;
