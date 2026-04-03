@@ -6749,6 +6749,13 @@ UU conflicted.rs",
 
     #[test]
     fn build_runtime_runs_plugin_lifecycle_init_and_shutdown() {
+        // Skip in CI environments without API credentials
+        if std::env::var("ANTHROPIC_API_KEY").is_err()
+            && std::env::var("ANTHROPIC_AUTH_TOKEN").is_err()
+        {
+            eprintln!("Skipping: no Anthropic credentials available");
+            return;
+        }
         let config_home = temp_dir();
         let workspace = temp_dir();
         let source_root = temp_dir();
