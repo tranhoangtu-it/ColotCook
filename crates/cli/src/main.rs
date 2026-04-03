@@ -3,6 +3,7 @@
 mod init;
 mod input;
 mod render;
+mod util;
 
 use std::collections::BTreeSet;
 use std::env;
@@ -43,6 +44,13 @@ use colotcook_tools::{GlobalToolRegistry, McpBridge};
 use init::initialize_repo;
 use render::{MarkdownStreamState, Spinner, TerminalRenderer};
 use serde_json::json;
+use util::{
+    extract_tool_path, first_visible_line, git_output, indent_block, open_browser,
+    ranked_suggestions, render_suggestion_line, suggest_closest_term, summarize_tool_payload,
+    truncate_for_prompt, truncate_for_summary, truncate_output_for_display,
+    READ_DISPLAY_MAX_CHARS, READ_DISPLAY_MAX_LINES,
+    TOOL_OUTPUT_DISPLAY_MAX_CHARS, TOOL_OUTPUT_DISPLAY_MAX_LINES,
+};
 
 const DEFAULT_MODEL: &str = "claude-opus-4-6";
 fn max_tokens_for_model(model: &str) -> u32 {
@@ -482,10 +490,6 @@ fn format_unknown_slash_command(name: &str) -> String {
     message
 }
 
-fn render_suggestion_line(label: &str, suggestions: &[String]) -> Option<String> {
-    (!suggestions.is_empty()).then(|| format!("  {label:<16} {}", suggestions.join(", "),))
-}
-
 fn suggest_slash_commands(input: &str) -> Vec<String> {
     let mut candidates = slash_command_specs()
         .iter()
@@ -503,59 +507,6 @@ fn suggest_slash_commands(input: &str) -> Vec<String> {
         .into_iter()
         .map(str::to_string)
         .collect()
-}
-
-fn suggest_closest_term<'a>(input: &str, candidates: &'a [&'a str]) -> Option<&'a str> {
-    ranked_suggestions(input, candidates).into_iter().next()
-}
-
-fn ranked_suggestions<'a>(input: &str, candidates: &'a [&'a str]) -> Vec<&'a str> {
-    let normalized_input = input.trim_start_matches('/').to_ascii_lowercase();
-    let mut ranked = candidates
-        .iter()
-        .filter_map(|candidate| {
-            let normalized_candidate = candidate.trim_start_matches('/').to_ascii_lowercase();
-            let distance = levenshtein_distance(&normalized_input, &normalized_candidate);
-            let prefix_bonus = usize::from(
-                !(normalized_candidate.starts_with(&normalized_input)
-                    || normalized_input.starts_with(&normalized_candidate)),
-            );
-            let score = distance + prefix_bonus;
-            (score <= 4).then_some((score, *candidate))
-        })
-        .collect::<Vec<_>>();
-    ranked.sort_by(|left, right| left.cmp(right).then_with(|| left.1.cmp(right.1)));
-    ranked
-        .into_iter()
-        .map(|(_, candidate)| candidate)
-        .take(3)
-        .collect()
-}
-
-fn levenshtein_distance(left: &str, right: &str) -> usize {
-    if left.is_empty() {
-        return right.chars().count();
-    }
-    if right.is_empty() {
-        return left.chars().count();
-    }
-
-    let right_chars = right.chars().collect::<Vec<_>>();
-    let mut previous = (0..=right_chars.len()).collect::<Vec<_>>();
-    let mut current = vec![0; right_chars.len() + 1];
-
-    for (left_index, left_char) in left.chars().enumerate() {
-        current[0] = left_index + 1;
-        for (right_index, right_char) in right_chars.iter().enumerate() {
-            let substitution_cost = usize::from(left_char != *right_char);
-            current[right_index + 1] = (previous[right_index + 1] + 1)
-                .min(current[right_index] + 1)
-                .min(previous[right_index] + substitution_cost);
-        }
-        previous.clone_from(&current);
-    }
-
-    previous[right_chars.len()]
 }
 
 fn resolve_model_alias(model: &str) -> &str {
@@ -804,27 +755,6 @@ fn run_logout() -> Result<(), Box<dyn std::error::Error>> {
     clear_oauth_credentials()?;
     println!("Claude OAuth credentials cleared.");
     Ok(())
-}
-
-fn open_browser(url: &str) -> io::Result<()> {
-    let commands = if cfg!(target_os = "macos") {
-        vec![("open", vec![url])]
-    } else if cfg!(target_os = "windows") {
-        vec![("cmd", vec!["/C", "start", "", url])]
-    } else {
-        vec![("xdg-open", vec![url])]
-    };
-    for (program, args) in commands {
-        match Command::new(program).args(args).spawn() {
-            Ok(_) => return Ok(()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
-        }
-    }
-    Err(io::Error::new(
-        io::ErrorKind::NotFound,
-        "no supported browser opener command found",
-    ))
 }
 
 fn wait_for_oauth_callback(
@@ -3103,15 +3033,6 @@ fn render_last_tool_debug_report(session: &Session) -> Result<String, Box<dyn st
     Ok(lines.join("\n"))
 }
 
-fn indent_block(value: &str, spaces: usize) -> String {
-    let indent = " ".repeat(spaces);
-    value
-        .lines()
-        .map(|line| format!("{indent}{line}"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 fn validate_no_args(
     command_name: &str,
     args: Option<&str>,
@@ -3164,104 +3085,6 @@ fn format_issue_report(context: Option<&str>) -> String {
   Output           title and markdown body suitable for GitHub",
         context.unwrap_or("none")
     )
-}
-
-fn git_output(args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(env::current_dir()?)
-        .output()?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(format!("git {} failed: {stderr}", args.join(" ")).into());
-    }
-    Ok(String::from_utf8(output.stdout)?)
-}
-
-#[allow(dead_code)] // Used in git workflow helpers, may not be called in all code paths
-fn git_status_ok(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(env::current_dir()?)
-        .output()?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(format!("git {} failed: {stderr}", args.join(" ")).into());
-    }
-    Ok(())
-}
-
-#[allow(dead_code)] // Used in pre-flight checks that may not be active in all code paths
-fn command_exists(name: &str) -> bool {
-    Command::new("which")
-        .arg(name)
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
-#[allow(dead_code)] // Used in prompt generation helpers, not all paths active
-fn write_temp_text_file(
-    filename: &str,
-    contents: &str,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let path = env::temp_dir().join(filename);
-    fs::write(&path, contents)?;
-    Ok(path)
-}
-
-#[allow(dead_code)] // Used in prompt context building, not all code paths active
-fn recent_user_context(session: &Session, limit: usize) -> String {
-    let requests = session
-        .messages
-        .iter()
-        .filter(|message| message.role == MessageRole::User)
-        .filter_map(|message| {
-            message.blocks.iter().find_map(|block| match block {
-                ContentBlock::Text { text } => Some(text.trim().to_string()),
-                _ => None,
-            })
-        })
-        .rev()
-        .take(limit)
-        .collect::<Vec<_>>();
-
-    if requests.is_empty() {
-        "<no prior user messages>".to_string()
-    } else {
-        requests
-            .into_iter()
-            .rev()
-            .enumerate()
-            .map(|(index, text)| format!("{}. {}", index + 1, text))
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-}
-
-fn truncate_for_prompt(value: &str, limit: usize) -> String {
-    if value.chars().count() <= limit {
-        value.trim().to_string()
-    } else {
-        let truncated = value.chars().take(limit).collect::<String>();
-        format!("{}\n…[truncated]", truncated.trim_end())
-    }
-}
-
-#[allow(dead_code)] // Used by parse_titled_body for AI-generated content normalization
-fn sanitize_generated_message(value: &str) -> String {
-    value.trim().trim_matches('`').trim().replace("\r\n", "\n")
-}
-
-#[allow(dead_code)] // Used in AI-assisted commit/PR workflows, not all paths active
-fn parse_titled_body(value: &str) -> Option<(String, String)> {
-    let normalized = sanitize_generated_message(value);
-    let title = normalized
-        .lines()
-        .find_map(|line| line.strip_prefix("TITLE:").map(str::trim))?;
-    let body_start = normalized.find("BODY:")?;
-    let body = normalized[body_start + "BODY:".len()..].trim();
-    Some((title.to_string(), body.to_string()))
 }
 
 fn render_version_report() -> String {
@@ -4375,23 +4198,6 @@ fn format_tool_result(name: &str, output: &str, is_error: bool) -> String {
     }
 }
 
-const DISPLAY_TRUNCATION_NOTICE: &str =
-    "\x1b[2m… output truncated for display; full result preserved in session.\x1b[0m";
-const READ_DISPLAY_MAX_LINES: usize = 80;
-const READ_DISPLAY_MAX_CHARS: usize = 6_000;
-const TOOL_OUTPUT_DISPLAY_MAX_LINES: usize = 60;
-const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 4_000;
-
-fn extract_tool_path(parsed: &serde_json::Value) -> String {
-    parsed
-        .get("file_path")
-        .or_else(|| parsed.get("filePath"))
-        .or_else(|| parsed.get("path"))
-        .and_then(|value| value.as_str())
-        .unwrap_or("?")
-        .to_string()
-}
-
 fn format_search_start(label: &str, parsed: &serde_json::Value) -> String {
     let pattern = parsed
         .get("pattern")
@@ -4428,12 +4234,6 @@ fn format_bash_call(parsed: &serde_json::Value) -> String {
             truncate_for_summary(command, 160)
         )
     }
-}
-
-fn first_visible_line(text: &str) -> &str {
-    text.lines()
-        .find(|line| !line.trim().is_empty())
-        .unwrap_or(text)
 }
 
 fn format_bash_result(icon: &str, parsed: &serde_json::Value) -> String {
@@ -4663,68 +4463,6 @@ fn format_generic_tool_result(icon: &str, name: &str, parsed: &serde_json::Value
     } else {
         format!("{icon} \x1b[38;5;245m{name}:\x1b[0m {preview}")
     }
-}
-
-fn summarize_tool_payload(payload: &str) -> String {
-    let compact = match serde_json::from_str::<serde_json::Value>(payload) {
-        Ok(value) => value.to_string(),
-        Err(_) => payload.trim().to_string(),
-    };
-    truncate_for_summary(&compact, 96)
-}
-
-fn truncate_for_summary(value: &str, limit: usize) -> String {
-    let mut chars = value.chars();
-    let truncated = chars.by_ref().take(limit).collect::<String>();
-    if chars.next().is_some() {
-        format!("{truncated}…")
-    } else {
-        truncated
-    }
-}
-
-fn truncate_output_for_display(content: &str, max_lines: usize, max_chars: usize) -> String {
-    let original = content.trim_end_matches('\n');
-    if original.is_empty() {
-        return String::new();
-    }
-
-    let mut preview_lines = Vec::new();
-    let mut used_chars = 0usize;
-    let mut truncated = false;
-
-    for (index, line) in original.lines().enumerate() {
-        if index >= max_lines {
-            truncated = true;
-            break;
-        }
-
-        let newline_cost = usize::from(!preview_lines.is_empty());
-        let available = max_chars.saturating_sub(used_chars + newline_cost);
-        if available == 0 {
-            truncated = true;
-            break;
-        }
-
-        let line_chars = line.chars().count();
-        if line_chars > available {
-            preview_lines.push(line.chars().take(available).collect::<String>());
-            truncated = true;
-            break;
-        }
-
-        preview_lines.push(line.to_string());
-        used_chars += newline_cost + line_chars;
-    }
-
-    let mut preview = preview_lines.join("\n");
-    if truncated {
-        if !preview.is_empty() {
-            preview.push('\n');
-        }
-        preview.push_str(DISPLAY_TRUNCATION_NOTICE);
-    }
-    preview
 }
 
 fn push_output_block(
