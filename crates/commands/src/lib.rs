@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::fmt;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -1879,7 +1880,7 @@ fn render_skills_usage(unexpected: Option<&str>) -> String {
 fn handle_cost(session: &Session) -> String {
     let mut output = String::new();
     output.push_str("## Token Usage\n\n");
-    output.push_str(&format!("- Total messages: {}\n", session.messages.len()));
+    let _ = writeln!(output, "- Total messages: {}", session.messages.len());
     output.push_str(
         "\nNote: Detailed token usage requires access to UsageTracker from the runtime.\n",
     );
@@ -1921,9 +1922,9 @@ fn handle_debug_tool_call(session: &Session) -> String {
             if let ContentBlock::ToolUse { id, name, input } = block {
                 let mut output = String::new();
                 output.push_str("## Last Tool Call\n\n");
-                output.push_str(&format!("- Tool: {name}\n"));
-                output.push_str(&format!("- ID: {id}\n"));
-                output.push_str(&format!("- Input:\n```json\n{input}\n```\n"));
+                let _ = writeln!(output, "- Tool: {name}");
+                let _ = writeln!(output, "- ID: {id}");
+                let _ = writeln!(output, "- Input:\n```json\n{input}\n```");
                 return output;
             }
         }
@@ -1948,14 +1949,14 @@ fn handle_sandbox() -> String {
 fn handle_session(session: &Session) -> String {
     let mut output = String::new();
     output.push_str("## Session Info\n\n");
-    output.push_str(&format!("- Session ID: {}\n", session.session_id));
-    output.push_str(&format!("- Messages: {}\n", session.messages.len()));
-    output.push_str(&format!("- Version: {}\n", session.version));
+    let _ = writeln!(output, "- Session ID: {}", session.session_id);
+    let _ = writeln!(output, "- Messages: {}", session.messages.len());
+    let _ = writeln!(output, "- Version: {}", session.version);
     if let Some(compaction) = &session.compaction {
-        output.push_str(&format!("- Compactions: {}\n", compaction.count));
+        let _ = writeln!(output, "- Compactions: {}", compaction.count);
     }
     if let Some(fork) = &session.fork {
-        output.push_str(&format!("- Forked from: {}\n", fork.parent_session_id));
+        let _ = writeln!(output, "- Forked from: {}", fork.parent_session_id);
     }
     output
 }

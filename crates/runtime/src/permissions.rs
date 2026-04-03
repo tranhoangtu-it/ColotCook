@@ -482,6 +482,8 @@ fn extract_permission_subject(input: &str) -> Option<String> {
 }
 
 /// Known dangerous shell patterns that should be flagged for permission review.
+// Reserved for future security checks — not yet wired into the permission pipeline.
+#[allow(dead_code)]
 const DANGEROUS_PATTERNS: &[&str] = &[
     "rm -rf /",
     "rm -rf ~",
@@ -501,6 +503,8 @@ const DANGEROUS_PATTERNS: &[&str] = &[
 
 /// Check if a command contains known dangerous patterns.
 /// Returns Some(pattern) if a dangerous pattern is found.
+// Reserved for future security checks — not yet wired into the permission pipeline.
+#[allow(dead_code)]
 #[must_use]
 pub fn detect_dangerous_pattern(input: &str) -> Option<&'static str> {
     let normalized = input.to_lowercase();
@@ -511,6 +515,8 @@ pub fn detect_dangerous_pattern(input: &str) -> Option<&'static str> {
 }
 
 /// Validate that a path doesn't escape the workspace via traversal.
+// Reserved for future security checks — not yet wired into the permission pipeline.
+#[allow(dead_code)]
 #[must_use]
 pub fn validate_path_traversal(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
@@ -522,6 +528,8 @@ pub fn validate_path_traversal(path: &str) -> bool {
 }
 
 /// Log a permission decision for audit trail.
+// Reserved for future security checks — not yet wired into the permission pipeline.
+#[allow(dead_code)]
 pub fn log_permission_decision(tool_name: &str, subject: Option<&str>, decision: &str, mode: &str) {
     // Use eprintln for now; can be upgraded to structured logging later
     if std::env::var("COLOTCOOK_AUDIT_LOG").is_ok() {

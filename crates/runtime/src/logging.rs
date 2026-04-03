@@ -4,6 +4,7 @@
 //! otherwise falls back to human-readable format.
 
 use std::fmt;
+use std::fmt::Write as _;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Log severity levels.
@@ -34,9 +35,9 @@ fn min_log_level() -> LogLevel {
         .as_str()
     {
         "debug" => LogLevel::Debug,
-        "info" => LogLevel::Info,
         "warn" => LogLevel::Warn,
         "error" => LogLevel::Error,
+        // "info" and unrecognized values both default to Info
         _ => LogLevel::Info,
     }
 }
@@ -67,11 +68,12 @@ pub fn log(level: LogLevel, component: &str, message: &str, fields: &[(&str, &st
             escape_json(message),
         );
         for (key, value) in fields {
-            json.push_str(&format!(
+            let _ = write!(
+                json,
                 r#","{}":"{}""#,
                 escape_json(key),
                 escape_json(value)
-            ));
+            );
         }
         json.push('}');
         eprintln!("{json}");

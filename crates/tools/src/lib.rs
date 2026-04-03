@@ -1017,6 +1017,7 @@ struct PlanModeState {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(clippy::struct_excessive_bools)] // Required fields for JSON API contract
 struct PlanModeOutput {
     success: bool,
     operation: String,
@@ -1875,6 +1876,7 @@ impl AgentOrchestrator {
     /// Spawn multiple agents in parallel and wait for all of them to complete.
     ///
     /// Returns results in the same order as the input requests.
+    #[allow(clippy::too_many_lines)] // Will be split in Phase 2
     pub fn run_parallel(requests: Vec<AgentSpawnRequest>, timeout: Duration) -> Vec<AgentResult> {
         let mut handles: Vec<(AgentOutput, std::thread::JoinHandle<()>)> = Vec::new();
 
@@ -1890,18 +1892,16 @@ impl AgentOrchestrator {
             let normalized_subagent_type = normalize_subagent_type(input.subagent_type.as_deref());
             let model = resolve_agent_model(input.model.as_deref());
             let agent_id = make_agent_id();
-            let output_dir = match agent_store_dir() {
-                Ok(dir) => dir,
-                Err(_) => continue,
+            let Ok(output_dir) = agent_store_dir() else {
+                continue;
             };
             let _ = std::fs::create_dir_all(&output_dir);
             let output_file = output_dir.join(format!("{agent_id}.md"));
             let manifest_file = output_dir.join(format!("{agent_id}.json"));
             let agent_name = slugify_agent_name(&input.description);
             let created_at = iso8601_now();
-            let system_prompt = match build_agent_system_prompt(&normalized_subagent_type) {
-                Ok(p) => p,
-                Err(_) => continue,
+            let Ok(system_prompt) = build_agent_system_prompt(&normalized_subagent_type) else {
+                continue;
             };
             let allowed_tools = allowed_tools_for_subagent(&normalized_subagent_type);
 
@@ -1963,7 +1963,7 @@ impl AgentOrchestrator {
                 });
 
             if let Ok(h) = handle {
-                handles.push((manifest, h))
+                handles.push((manifest, h));
             }
         }
 

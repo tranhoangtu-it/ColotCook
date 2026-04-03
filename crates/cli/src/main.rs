@@ -57,6 +57,7 @@ const DEFAULT_OAUTH_CALLBACK_PORT: u16 = 4545;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const BUILD_TARGET: Option<&str> = option_env!("TARGET");
 const GIT_SHA: Option<&str> = option_env!("GIT_SHA");
+#[allow(dead_code)] // Used by InternalPromptProgressRun heartbeat thread at runtime
 const INTERNAL_PROGRESS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(3);
 const PRIMARY_SESSION_EXTENSION: &str = "jsonl";
 const LEGACY_SESSION_EXTENSION: &str = "json";
@@ -2303,6 +2304,7 @@ impl LiveCli {
         Ok(())
     }
 
+    #[allow(dead_code)] // Called dynamically via REPL command dispatch
     fn run_internal_prompt_text_with_progress(
         &self,
         prompt: &str,
@@ -2328,6 +2330,7 @@ impl LiveCli {
         Ok(text)
     }
 
+    #[allow(dead_code)] // Called dynamically via REPL command dispatch
     fn run_internal_prompt_text(
         &self,
         prompt: &str,
@@ -2336,11 +2339,13 @@ impl LiveCli {
         self.run_internal_prompt_text_with_progress(prompt, enable_tools, None)
     }
 
+    #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
     fn run_bughunter(&self, scope: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", format_bughunter_report(scope));
         Ok(())
     }
 
+    #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
     fn run_ultraplan(&self, task: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", format_ultraplan_report(task));
         Ok(())
@@ -2357,12 +2362,14 @@ impl LiveCli {
         Ok(())
     }
 
+    #[allow(clippy::unused_self)]
     fn run_debug_tool_call(&self, args: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         validate_no_args("/debug-tool-call", args)?;
         println!("{}", render_last_tool_debug_report(self.runtime.session())?);
         Ok(())
     }
 
+    #[allow(clippy::unused_self)]
     fn run_commit(&mut self, args: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         validate_no_args("/commit", args)?;
         let status = git_output(&["status", "--short", "--branch"])?;
@@ -2380,6 +2387,7 @@ impl LiveCli {
         Ok(())
     }
 
+    #[allow(clippy::unused_self)]
     fn run_pr(&self, context: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         let branch =
             resolve_git_branch_for(&env::current_dir()?).unwrap_or_else(|| "unknown".to_string());
@@ -2387,6 +2395,7 @@ impl LiveCli {
         Ok(())
     }
 
+    #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
     fn run_issue(&self, context: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", format_issue_report(context));
         Ok(())
@@ -3169,6 +3178,7 @@ fn git_output(args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
     Ok(String::from_utf8(output.stdout)?)
 }
 
+#[allow(dead_code)] // Used in git workflow helpers, may not be called in all code paths
 fn git_status_ok(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
     let output = Command::new("git")
         .args(args)
@@ -3181,6 +3191,7 @@ fn git_status_ok(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(dead_code)] // Used in pre-flight checks that may not be active in all code paths
 fn command_exists(name: &str) -> bool {
     Command::new("which")
         .arg(name)
@@ -3189,6 +3200,7 @@ fn command_exists(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+#[allow(dead_code)] // Used in prompt generation helpers, not all paths active
 fn write_temp_text_file(
     filename: &str,
     contents: &str,
@@ -3198,6 +3210,7 @@ fn write_temp_text_file(
     Ok(path)
 }
 
+#[allow(dead_code)] // Used in prompt context building, not all code paths active
 fn recent_user_context(session: &Session, limit: usize) -> String {
     let requests = session
         .messages
@@ -3235,10 +3248,12 @@ fn truncate_for_prompt(value: &str, limit: usize) -> String {
     }
 }
 
+#[allow(dead_code)] // Used by parse_titled_body for AI-generated content normalization
 fn sanitize_generated_message(value: &str) -> String {
     value.trim().trim_matches('`').trim().replace("\r\n", "\n")
 }
 
+#[allow(dead_code)] // Used in AI-assisted commit/PR workflows, not all paths active
 fn parse_titled_body(value: &str) -> Option<(String, String)> {
     let normalized = sanitize_generated_message(value);
     let title = normalized
@@ -3353,6 +3368,7 @@ fn build_system_prompt() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     )?)
 }
 
+#[allow(dead_code)] // Entry point for plugin state initialization, called from session setup paths
 fn build_runtime_plugin_state() -> Result<RuntimePluginState, Box<dyn std::error::Error>> {
     let cwd = env::current_dir()?;
     let loader = ConfigLoader::default_for(&cwd);
@@ -3436,6 +3452,7 @@ struct InternalPromptProgressState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Variants used by InternalPromptProgressReporter/Run at runtime
 enum InternalPromptProgressEvent {
     Started,
     Update,
@@ -3457,12 +3474,14 @@ struct InternalPromptProgressReporter {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)] // Constructed via InternalPromptProgressRun::start_ultraplan at runtime
 struct InternalPromptProgressRun {
     reporter: InternalPromptProgressReporter,
     heartbeat_stop: Option<mpsc::Sender<()>>,
     heartbeat_handle: Option<thread::JoinHandle<()>>,
 }
 
+#[allow(dead_code)] // Methods used by InternalPromptProgressRun at runtime
 impl InternalPromptProgressReporter {
     fn ultraplan(task: &str) -> Self {
         Self {
@@ -3595,6 +3614,7 @@ impl InternalPromptProgressReporter {
     }
 }
 
+#[allow(dead_code)] // Methods used by run_ultraplan REPL command at runtime
 impl InternalPromptProgressRun {
     fn start_ultraplan(task: &str) -> Self {
         let reporter = InternalPromptProgressReporter::ultraplan(task);

@@ -430,18 +430,18 @@ impl McpHttpClient {
         // Log the error for debugging but don't fail the handshake.
         match builder {
             Ok(builder) => {
-                if let Err(_e) = builder.json(&notification).send().await {
+                if let Err(e) = builder.json(&notification).send().await {
                     #[cfg(debug_assertions)]
                     eprintln!(
-                        "[MCP] warning: failed to send initialized notification to {}: {_e}",
+                        "[MCP] warning: failed to send initialized notification to {}: {e}",
                         self.server_name
                     );
                 }
             }
-            Err(_e) => {
+            Err(e) => {
                 #[cfg(debug_assertions)]
                 eprintln!(
-                    "[MCP] warning: failed to prepare initialized notification to {}: {_e}",
+                    "[MCP] warning: failed to prepare initialized notification to {}: {e}",
                     self.server_name
                 );
             }
@@ -477,6 +477,8 @@ impl McpHttpClient {
 // ---------------------------------------------------------------------------
 
 /// Parsed SSE event from an MCP server.
+// SSE transport support is prepared but not yet wired up in the HTTP client.
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SseEvent {
     /// Event type (e.g., "message", "endpoint", "error").
@@ -495,6 +497,8 @@ pub struct SseEvent {
 /// - Lines starting with "id:" set the event ID
 /// - Empty lines dispatch the event
 /// - Lines starting with ":" are comments (ignored)
+// SSE transport support is prepared but not yet wired up in the HTTP client.
+#[allow(dead_code)]
 #[must_use]
 pub fn parse_sse_events(raw: &str) -> Vec<SseEvent> {
     let mut events = Vec::new();
@@ -550,6 +554,8 @@ pub fn parse_sse_events(raw: &str) -> Vec<SseEvent> {
 }
 
 /// MCP-specific SSE event types.
+// SSE transport support is prepared but not yet wired up in the HTTP client.
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpSseMessage {
     /// Server endpoint for subsequent POST requests.
@@ -563,6 +569,8 @@ pub enum McpSseMessage {
 }
 
 /// Classify parsed SSE events into MCP-specific message types.
+// SSE transport support is prepared but not yet wired up in the HTTP client.
+#[allow(dead_code)]
 #[must_use]
 pub fn classify_mcp_sse_events(events: &[SseEvent]) -> Vec<McpSseMessage> {
     events

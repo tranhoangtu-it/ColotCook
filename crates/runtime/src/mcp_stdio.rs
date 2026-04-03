@@ -386,25 +386,21 @@ impl McpServerManager {
     #[must_use]
     pub fn from_servers(servers: &BTreeMap<String, ScopedMcpServerConfig>) -> Self {
         // Use a blocking runtime to initialize async HTTP clients
-        let rt = match tokio::runtime::Runtime::new() {
-            Ok(rt) => rt,
-            Err(_) => {
-                // Fallback: if we can't create a runtime, create manager with no servers
-                return Self {
-                    servers: BTreeMap::new(),
-                    unsupported_servers: servers
-                        .iter()
-                        .map(|(name, config)| UnsupportedMcpServer {
-                            server_name: name.clone(),
-                            transport: config.transport(),
-                            reason: "failed to initialize tokio runtime for HTTP clients"
-                                .to_string(),
-                        })
-                        .collect(),
-                    tool_index: BTreeMap::new(),
-                    next_request_id: 1,
-                };
-            }
+        let Ok(rt) = tokio::runtime::Runtime::new() else {
+            // Fallback: if we can't create a runtime, create manager with no servers
+            return Self {
+                servers: BTreeMap::new(),
+                unsupported_servers: servers
+                    .iter()
+                    .map(|(name, config)| UnsupportedMcpServer {
+                        server_name: name.clone(),
+                        transport: config.transport(),
+                        reason: "failed to initialize tokio runtime for HTTP clients".to_string(),
+                    })
+                    .collect(),
+                tool_index: BTreeMap::new(),
+                next_request_id: 1,
+            };
         };
 
         rt.block_on(Self::from_servers_async(servers))
