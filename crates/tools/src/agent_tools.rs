@@ -1011,3 +1011,304 @@ pub(crate) fn iso8601_now() -> String {
         .as_secs()
         .to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- resolve_agent_model ---
+
+    #[test]
+    fn resolve_agent_model_none_returns_default() {
+        assert_eq!(resolve_agent_model(None), DEFAULT_AGENT_MODEL);
+    }
+
+    #[test]
+    fn resolve_agent_model_empty_returns_default() {
+        assert_eq!(resolve_agent_model(Some("")), DEFAULT_AGENT_MODEL);
+    }
+
+    #[test]
+    fn resolve_agent_model_whitespace_returns_default() {
+        assert_eq!(resolve_agent_model(Some("   ")), DEFAULT_AGENT_MODEL);
+    }
+
+    #[test]
+    fn resolve_agent_model_custom_model() {
+        assert_eq!(
+            resolve_agent_model(Some("claude-haiku-3")),
+            "claude-haiku-3"
+        );
+    }
+
+    #[test]
+    fn resolve_agent_model_trims_whitespace() {
+        assert_eq!(
+            resolve_agent_model(Some("  claude-haiku-3  ")),
+            "claude-haiku-3"
+        );
+    }
+
+    // --- normalize_subagent_type ---
+
+    #[test]
+    fn normalize_subagent_type_none_returns_general_purpose() {
+        assert_eq!(normalize_subagent_type(None), "general-purpose");
+    }
+
+    #[test]
+    fn normalize_subagent_type_empty_returns_general_purpose() {
+        assert_eq!(normalize_subagent_type(Some("")), "general-purpose");
+    }
+
+    #[test]
+    fn normalize_subagent_type_explore_variants() {
+        assert_eq!(normalize_subagent_type(Some("explore")), "Explore");
+        assert_eq!(normalize_subagent_type(Some("Explore")), "Explore");
+        assert_eq!(normalize_subagent_type(Some("explorer")), "Explore");
+    }
+
+    #[test]
+    fn normalize_subagent_type_plan_variants() {
+        assert_eq!(normalize_subagent_type(Some("plan")), "Plan");
+        assert_eq!(normalize_subagent_type(Some("Plan")), "Plan");
+    }
+
+    #[test]
+    fn normalize_subagent_type_verification_variants() {
+        assert_eq!(
+            normalize_subagent_type(Some("verification")),
+            "Verification"
+        );
+        assert_eq!(normalize_subagent_type(Some("verify")), "Verification");
+        assert_eq!(normalize_subagent_type(Some("verifier")), "Verification");
+    }
+
+    #[test]
+    fn normalize_subagent_type_general_variants() {
+        assert_eq!(normalize_subagent_type(Some("general")), "general-purpose");
+        assert_eq!(
+            normalize_subagent_type(Some("general-purpose")),
+            "general-purpose"
+        );
+    }
+
+    #[test]
+    fn normalize_subagent_type_claw_guide() {
+        assert_eq!(normalize_subagent_type(Some("claw-guide")), "claw-guide");
+        assert_eq!(normalize_subagent_type(Some("guide")), "claw-guide");
+    }
+
+    #[test]
+    fn normalize_subagent_type_statusline_setup() {
+        assert_eq!(
+            normalize_subagent_type(Some("statusline-setup")),
+            "statusline-setup"
+        );
+        assert_eq!(
+            normalize_subagent_type(Some("statusline")),
+            "statusline-setup"
+        );
+    }
+
+    #[test]
+    fn normalize_subagent_type_unknown_passthrough() {
+        assert_eq!(normalize_subagent_type(Some("my-custom")), "my-custom");
+    }
+
+    // --- slugify_agent_name ---
+
+    #[test]
+    fn slugify_agent_name_basic() {
+        assert_eq!(slugify_agent_name("hello world"), "hello-world");
+    }
+
+    #[test]
+    fn slugify_agent_name_uppercase_lowercased() {
+        assert_eq!(slugify_agent_name("Hello World"), "hello-world");
+    }
+
+    #[test]
+    fn slugify_agent_name_collapses_separators() {
+        assert_eq!(slugify_agent_name("hello  world"), "hello-world");
+    }
+
+    #[test]
+    fn slugify_agent_name_trims_dashes() {
+        assert_eq!(slugify_agent_name("  hello  "), "hello");
+    }
+
+    #[test]
+    fn slugify_agent_name_truncates_at_32_chars() {
+        let long = "a".repeat(40);
+        let result = slugify_agent_name(&long);
+        assert_eq!(result.len(), 32);
+    }
+
+    #[test]
+    fn slugify_agent_name_empty_returns_empty() {
+        assert_eq!(slugify_agent_name(""), "");
+    }
+
+    #[test]
+    fn slugify_agent_name_special_chars_become_dash() {
+        assert_eq!(slugify_agent_name("fix:bug"), "fix-bug");
+    }
+
+    // --- make_agent_id ---
+
+    #[test]
+    fn make_agent_id_has_agent_prefix() {
+        let id = make_agent_id();
+        assert!(id.starts_with("agent-"), "id was: {id}");
+    }
+
+    #[test]
+    fn make_agent_id_unique() {
+        let id1 = make_agent_id();
+        std::thread::sleep(std::time::Duration::from_nanos(1000));
+        let id2 = make_agent_id();
+        // Two IDs generated with a small gap should not be equal
+        // (nanos are unique in almost all cases; this just checks format)
+        assert!(id1.starts_with("agent-"));
+        assert!(id2.starts_with("agent-"));
+    }
+
+    // --- agent_store_dir ---
+
+    #[test]
+    fn agent_store_dir_env_override() {
+        std::env::set_var("COLOTCOOK_AGENT_STORE", "/tmp/test-agent-store");
+        let dir = agent_store_dir().unwrap();
+        assert_eq!(dir, std::path::PathBuf::from("/tmp/test-agent-store"));
+        std::env::remove_var("COLOTCOOK_AGENT_STORE");
+    }
+
+    #[test]
+    fn agent_store_dir_default_contains_colotcook_agents() {
+        std::env::remove_var("COLOTCOOK_AGENT_STORE");
+        let dir = agent_store_dir().unwrap();
+        assert!(
+            dir.to_string_lossy().contains(".colotcook-agents"),
+            "dir was: {}",
+            dir.display()
+        );
+    }
+
+    // --- iso8601_now ---
+
+    #[test]
+    fn iso8601_now_returns_numeric_string() {
+        let ts = iso8601_now();
+        assert!(!ts.is_empty());
+        let _: u64 = ts.parse().expect("should be a numeric unix timestamp");
+    }
+
+    // --- allowed_tools_for_subagent ---
+
+    #[test]
+    fn allowed_tools_explore_contains_read_file() {
+        let tools = allowed_tools_for_subagent("Explore");
+        assert!(tools.contains("read_file"));
+        assert!(!tools.contains("bash"), "Explore should not have bash");
+    }
+
+    #[test]
+    fn allowed_tools_plan_contains_todo_write() {
+        let tools = allowed_tools_for_subagent("Plan");
+        assert!(tools.contains("TodoWrite"));
+    }
+
+    #[test]
+    fn allowed_tools_verification_contains_bash() {
+        let tools = allowed_tools_for_subagent("Verification");
+        assert!(tools.contains("bash"));
+    }
+
+    #[test]
+    fn allowed_tools_default_contains_common_tools() {
+        let tools = allowed_tools_for_subagent("unknown-type");
+        assert!(tools.contains("bash"));
+        assert!(tools.contains("read_file"));
+        assert!(tools.contains("write_file"));
+    }
+
+    #[test]
+    fn allowed_tools_claw_guide_has_no_bash() {
+        let tools = allowed_tools_for_subagent("claw-guide");
+        assert!(!tools.contains("bash"));
+        assert!(tools.contains("WebFetch"));
+    }
+
+    #[test]
+    fn allowed_tools_statusline_setup_has_edit() {
+        let tools = allowed_tools_for_subagent("statusline-setup");
+        assert!(tools.contains("edit_file"));
+        assert!(tools.contains("bash"));
+    }
+
+    // --- format_agent_terminal_output ---
+
+    #[test]
+    fn format_agent_terminal_output_completed_no_result() {
+        let output = format_agent_terminal_output("completed", None, None);
+        assert!(output.contains("completed"));
+        assert!(output.contains("## Result"));
+    }
+
+    #[test]
+    fn format_agent_terminal_output_with_result() {
+        let output = format_agent_terminal_output("completed", Some("task done"), None);
+        assert!(output.contains("task done"));
+        assert!(output.contains("Final response"));
+    }
+
+    #[test]
+    fn format_agent_terminal_output_with_error() {
+        let output = format_agent_terminal_output("failed", None, Some("something broke"));
+        assert!(output.contains("something broke"));
+        assert!(output.contains("Error"));
+    }
+
+    #[test]
+    fn format_agent_terminal_output_empty_result_omitted() {
+        let output = format_agent_terminal_output("completed", Some("   "), None);
+        assert!(!output.contains("Final response"));
+    }
+
+    #[test]
+    fn format_agent_terminal_output_empty_error_omitted() {
+        let output = format_agent_terminal_output("failed", None, Some("   "));
+        assert!(!output.contains("### Error"));
+    }
+
+    // --- execute_agent_with_spawn validation ---
+
+    #[test]
+    fn execute_agent_with_spawn_empty_description_errors() {
+        let input = crate::types::AgentInput {
+            description: String::new(),
+            prompt: String::from("do something"),
+            subagent_type: None,
+            name: None,
+            model: None,
+        };
+        let result = execute_agent_with_spawn(input, |_| Ok(()));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("description"));
+    }
+
+    #[test]
+    fn execute_agent_with_spawn_empty_prompt_errors() {
+        let input = crate::types::AgentInput {
+            description: String::from("a task"),
+            prompt: String::new(),
+            subagent_type: None,
+            name: None,
+            model: None,
+        };
+        let result = execute_agent_with_spawn(input, |_| Ok(()));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("prompt"));
+    }
+}

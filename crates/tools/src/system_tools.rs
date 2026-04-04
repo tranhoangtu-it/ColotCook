@@ -518,3 +518,351 @@ pub(crate) fn clear_plan_mode_state(path: &Path) -> Result<(), String> {
         Err(error) => Err(error.to_string()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // --- iso8601_timestamp (re-exported from system_tools via execute_config) ---
+
+    // --- supported_config_setting ---
+
+    #[test]
+    fn supported_config_setting_known_returns_some() {
+        assert!(supported_config_setting("theme").is_some());
+        assert!(supported_config_setting("verbose").is_some());
+        assert!(supported_config_setting("model").is_some());
+        assert!(supported_config_setting("permissions.defaultMode").is_some());
+        assert!(supported_config_setting("editorMode").is_some());
+        assert!(supported_config_setting("language").is_some());
+        assert!(supported_config_setting("teammateMode").is_some());
+    }
+
+    #[test]
+    fn supported_config_setting_unknown_returns_none() {
+        assert!(supported_config_setting("nonExistentSetting").is_none());
+        assert!(supported_config_setting("").is_none());
+        assert!(supported_config_setting("THEME").is_none());
+    }
+
+    // --- normalize_config_value ---
+
+    #[test]
+    fn normalize_config_value_bool_true() {
+        let spec = supported_config_setting("verbose").unwrap();
+        let result = normalize_config_value(spec, ConfigValue::Bool(true)).unwrap();
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[test]
+    fn normalize_config_value_bool_string_true() {
+        let spec = supported_config_setting("verbose").unwrap();
+        let result =
+            normalize_config_value(spec, ConfigValue::String(String::from("true"))).unwrap();
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[test]
+    fn normalize_config_value_bool_string_false() {
+        let spec = supported_config_setting("verbose").unwrap();
+        let result =
+            normalize_config_value(spec, ConfigValue::String(String::from("false"))).unwrap();
+        assert_eq!(result, Value::Bool(false));
+    }
+
+    #[test]
+    fn normalize_config_value_bool_string_invalid_errors() {
+        let spec = supported_config_setting("verbose").unwrap();
+        let result = normalize_config_value(spec, ConfigValue::String(String::from("yes")));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn normalize_config_value_bool_number_errors() {
+        let spec = supported_config_setting("verbose").unwrap();
+        let result = normalize_config_value(spec, ConfigValue::Number(1.0));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn normalize_config_value_string_kind_string_value() {
+        let spec = supported_config_setting("theme").unwrap();
+        let result =
+            normalize_config_value(spec, ConfigValue::String(String::from("dark"))).unwrap();
+        assert_eq!(result, Value::String(String::from("dark")));
+    }
+
+    #[test]
+    fn normalize_config_value_string_kind_bool_value_converts() {
+        let spec = supported_config_setting("theme").unwrap();
+        let result = normalize_config_value(spec, ConfigValue::Bool(true)).unwrap();
+        assert_eq!(result, Value::String(String::from("true")));
+    }
+
+    #[test]
+    fn normalize_config_value_options_invalid_errors() {
+        let spec = supported_config_setting("editorMode").unwrap();
+        let result =
+            normalize_config_value(spec, ConfigValue::String(String::from("invalid-mode")));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid value"));
+    }
+
+    #[test]
+    fn normalize_config_value_options_valid_accepted() {
+        let spec = supported_config_setting("editorMode").unwrap();
+        let result =
+            normalize_config_value(spec, ConfigValue::String(String::from("vim"))).unwrap();
+        assert_eq!(result, Value::String(String::from("vim")));
+    }
+
+    #[test]
+    fn normalize_config_value_permissions_default_mode_options() {
+        let spec = supported_config_setting("permissions.defaultMode").unwrap();
+        let result =
+            normalize_config_value(spec, ConfigValue::String(String::from("plan"))).unwrap();
+        assert_eq!(result, Value::String(String::from("plan")));
+    }
+
+    // --- config_file_for_scope ---
+
+    #[test]
+    fn config_file_for_scope_global_returns_settings_json() {
+        let path = config_file_for_scope(ConfigScope::Global).unwrap();
+        assert!(
+            path.to_string_lossy().contains("settings.json"),
+            "path: {}",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn config_file_for_scope_settings_returns_local_json() {
+        let path = config_file_for_scope(ConfigScope::Settings).unwrap();
+        assert!(
+            path.to_string_lossy().contains("settings.local.json"),
+            "path: {}",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn config_file_for_scope_global_uses_claw_config_home_env() {
+        std::env::set_var("CLAW_CONFIG_HOME", "/tmp/test-claw-cfg");
+        let path = config_file_for_scope(ConfigScope::Global).unwrap();
+        assert_eq!(
+            path,
+            std::path::PathBuf::from("/tmp/test-claw-cfg/settings.json")
+        );
+        std::env::remove_var("CLAW_CONFIG_HOME");
+    }
+
+    // --- get_nested_value / set_nested_value / remove_nested_value ---
+
+    #[test]
+    fn get_nested_value_top_level() {
+        let mut map = serde_json::Map::new();
+        map.insert(String::from("key"), json!("value"));
+        let result = get_nested_value(&map, &["key"]);
+        assert_eq!(result, Some(&json!("value")));
+    }
+
+    #[test]
+    fn get_nested_value_nested() {
+        let mut map = serde_json::Map::new();
+        map.insert(String::from("outer"), json!({"inner": 42}));
+        let result = get_nested_value(&map, &["outer", "inner"]);
+        assert_eq!(result, Some(&json!(42)));
+    }
+
+    #[test]
+    fn get_nested_value_missing_key() {
+        let map = serde_json::Map::new();
+        assert_eq!(get_nested_value(&map, &["missing"]), None);
+    }
+
+    #[test]
+    fn set_nested_value_top_level() {
+        let mut map = serde_json::Map::new();
+        set_nested_value(&mut map, &["key"], json!("hello"));
+        assert_eq!(map.get("key"), Some(&json!("hello")));
+    }
+
+    #[test]
+    fn set_nested_value_nested_creates_objects() {
+        let mut map = serde_json::Map::new();
+        set_nested_value(&mut map, &["outer", "inner"], json!(99));
+        let result = get_nested_value(&map, &["outer", "inner"]);
+        assert_eq!(result, Some(&json!(99)));
+    }
+
+    #[test]
+    fn set_nested_value_overwrites_non_object() {
+        let mut map = serde_json::Map::new();
+        map.insert(String::from("outer"), json!("not-an-object"));
+        set_nested_value(&mut map, &["outer", "inner"], json!(1));
+        let result = get_nested_value(&map, &["outer", "inner"]);
+        assert_eq!(result, Some(&json!(1)));
+    }
+
+    #[test]
+    fn remove_nested_value_top_level() {
+        let mut map = serde_json::Map::new();
+        map.insert(String::from("key"), json!("value"));
+        let removed = remove_nested_value(&mut map, &["key"]);
+        assert!(removed);
+        assert!(map.get("key").is_none());
+    }
+
+    #[test]
+    fn remove_nested_value_nested_removes_empty_parent() {
+        let mut map = serde_json::Map::new();
+        set_nested_value(&mut map, &["outer", "inner"], json!(1));
+        let removed = remove_nested_value(&mut map, &["outer", "inner"]);
+        assert!(removed);
+        // Parent "outer" should be removed since it became empty
+        assert!(map.get("outer").is_none());
+    }
+
+    #[test]
+    fn remove_nested_value_missing_returns_false() {
+        let mut map = serde_json::Map::new();
+        let removed = remove_nested_value(&mut map, &["missing"]);
+        assert!(!removed);
+    }
+
+    // --- read_json_object ---
+
+    #[test]
+    fn read_json_object_missing_file_returns_empty() {
+        let path = std::path::Path::new("/tmp/colotcook-test-nonexistent-99999.json");
+        let result = read_json_object(path).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn read_json_object_valid_json() {
+        let path = std::env::temp_dir().join("colotcook-test-rjo.json");
+        std::fs::write(&path, r#"{"key":"val"}"#).unwrap();
+        let result = read_json_object(&path).unwrap();
+        assert_eq!(result.get("key"), Some(&json!("val")));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn read_json_object_empty_file_returns_empty() {
+        let path = std::env::temp_dir().join("colotcook-test-rjo-empty.json");
+        std::fs::write(&path, "").unwrap();
+        let result = read_json_object(&path).unwrap();
+        assert!(result.is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn read_json_object_whitespace_only_returns_empty() {
+        let path = std::env::temp_dir().join("colotcook-test-rjo-ws.json");
+        std::fs::write(&path, "   \n\t  ").unwrap();
+        let result = read_json_object(&path).unwrap();
+        assert!(result.is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // --- write_json_object ---
+
+    #[test]
+    fn write_json_object_creates_file() {
+        let path = std::env::temp_dir().join("colotcook-test-wjo.json");
+        let mut map = serde_json::Map::new();
+        map.insert(String::from("written"), json!(true));
+        write_json_object(&path, &map).unwrap();
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("written"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // --- read/write/clear plan_mode_state ---
+
+    #[test]
+    fn read_plan_mode_state_missing_returns_none() {
+        let path = std::path::Path::new("/tmp/colotcook-test-plan-state-missing.json");
+        let result = read_plan_mode_state(path).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn write_and_read_plan_mode_state_roundtrip() {
+        let path =
+            std::env::temp_dir().join("colotcook-test-plan-state.json");
+        let state = PlanModeState {
+            had_local_override: true,
+            previous_local_mode: Some(json!("default")),
+        };
+        write_plan_mode_state(&path, &state).unwrap();
+        let read_back = read_plan_mode_state(&path).unwrap().unwrap();
+        assert_eq!(read_back.had_local_override, true);
+        assert_eq!(read_back.previous_local_mode, Some(json!("default")));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn clear_plan_mode_state_removes_file() {
+        let path = std::env::temp_dir().join("colotcook-test-plan-clear.json");
+        std::fs::write(&path, "{}").unwrap();
+        clear_plan_mode_state(&path).unwrap();
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn clear_plan_mode_state_missing_file_ok() {
+        let path =
+            std::path::Path::new("/tmp/colotcook-test-plan-clear-nonexistent.json");
+        let result = clear_plan_mode_state(path);
+        assert!(result.is_ok());
+    }
+
+    // --- execute_structured_output ---
+
+    #[test]
+    fn execute_structured_output_empty_map_errors() {
+        use crate::types::StructuredOutputInput;
+        use std::collections::BTreeMap;
+        let input = StructuredOutputInput(BTreeMap::new());
+        let result = execute_structured_output(input);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn execute_structured_output_non_empty_ok() {
+        use crate::types::StructuredOutputInput;
+        use std::collections::BTreeMap;
+        let mut map = BTreeMap::new();
+        map.insert(String::from("status"), json!("done"));
+        let input = StructuredOutputInput(map);
+        let result = execute_structured_output(input).unwrap();
+        assert!(result.structured_output.contains_key("status"));
+    }
+
+    // --- execute_config ---
+
+    #[test]
+    fn execute_config_empty_setting_errors() {
+        let input = ConfigInput {
+            setting: String::new(),
+            value: None,
+        };
+        let result = execute_config(input);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn execute_config_unknown_setting_returns_error_output() {
+        let input = ConfigInput {
+            setting: String::from("unknownXyz"),
+            value: None,
+        };
+        let output = execute_config(input).unwrap();
+        assert!(!output.success);
+        assert!(output.error.is_some());
+    }
+}

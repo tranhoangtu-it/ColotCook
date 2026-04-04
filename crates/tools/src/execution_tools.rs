@@ -586,3 +586,313 @@ pub(crate) fn format_notebook_edit_mode(mode: NotebookEditMode) -> String {
 pub(crate) fn make_cell_id(index: usize) -> String {
     format!("cell-{}", index + 1)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // --- make_cell_id ---
+
+    #[test]
+    fn make_cell_id_zero() {
+        assert_eq!(make_cell_id(0), "cell-1");
+    }
+
+    #[test]
+    fn make_cell_id_nonzero() {
+        assert_eq!(make_cell_id(4), "cell-5");
+    }
+
+    // --- format_notebook_edit_mode ---
+
+    #[test]
+    fn format_notebook_edit_mode_replace() {
+        assert_eq!(
+            format_notebook_edit_mode(NotebookEditMode::Replace),
+            "replace"
+        );
+    }
+
+    #[test]
+    fn format_notebook_edit_mode_insert() {
+        assert_eq!(
+            format_notebook_edit_mode(NotebookEditMode::Insert),
+            "insert"
+        );
+    }
+
+    #[test]
+    fn format_notebook_edit_mode_delete() {
+        assert_eq!(
+            format_notebook_edit_mode(NotebookEditMode::Delete),
+            "delete"
+        );
+    }
+
+    // --- source_lines ---
+
+    #[test]
+    fn source_lines_empty_source() {
+        let lines = source_lines("");
+        assert_eq!(lines, vec![json!("")]);
+    }
+
+    #[test]
+    fn source_lines_single_line() {
+        let lines = source_lines("print('hello')");
+        assert_eq!(lines, vec![json!("print('hello')")]);
+    }
+
+    #[test]
+    fn source_lines_multiple_lines() {
+        let lines = source_lines("line1\nline2\n");
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0], json!("line1\n"));
+        assert_eq!(lines[1], json!("line2\n"));
+    }
+
+    // --- cell_kind ---
+
+    #[test]
+    fn cell_kind_code() {
+        let cell = json!({"cell_type": "code"});
+        assert_eq!(cell_kind(&cell), Some(NotebookCellType::Code));
+    }
+
+    #[test]
+    fn cell_kind_markdown() {
+        let cell = json!({"cell_type": "markdown"});
+        assert_eq!(cell_kind(&cell), Some(NotebookCellType::Markdown));
+    }
+
+    #[test]
+    fn cell_kind_unknown_defaults_to_code() {
+        let cell = json!({"cell_type": "raw"});
+        assert_eq!(cell_kind(&cell), Some(NotebookCellType::Code));
+    }
+
+    #[test]
+    fn cell_kind_missing_field() {
+        let cell = json!({"source": []});
+        assert_eq!(cell_kind(&cell), None);
+    }
+
+    // --- build_notebook_cell ---
+
+    #[test]
+    fn build_notebook_cell_code() {
+        let cell = build_notebook_cell("abc", NotebookCellType::Code, "x = 1");
+        assert_eq!(cell["cell_type"], "code");
+        assert_eq!(cell["id"], "abc");
+        assert!(cell["outputs"].is_array());
+        assert!(cell["execution_count"].is_null());
+    }
+
+    #[test]
+    fn build_notebook_cell_markdown() {
+        let cell = build_notebook_cell("md1", NotebookCellType::Markdown, "# Title");
+        assert_eq!(cell["cell_type"], "markdown");
+        assert!(cell.get("outputs").is_none());
+        assert!(cell.get("execution_count").is_none());
+    }
+
+    // --- resolve_cell_index ---
+
+    #[test]
+    fn resolve_cell_index_empty_cells_replace_errors() {
+        let cells: Vec<serde_json::Value> = vec![];
+        let result = resolve_cell_index(&cells, None, NotebookEditMode::Replace);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("no cells"));
+    }
+
+    #[test]
+    fn resolve_cell_index_empty_cells_delete_errors() {
+        let cells: Vec<serde_json::Value> = vec![];
+        let result = resolve_cell_index(&cells, None, NotebookEditMode::Delete);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_cell_index_empty_cells_insert_returns_zero() {
+        let cells: Vec<serde_json::Value> = vec![];
+        let result = resolve_cell_index(&cells, None, NotebookEditMode::Insert).unwrap();
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn resolve_cell_index_by_id() {
+        let cells = vec![
+            json!({"id": "cell-1", "cell_type": "code"}),
+            json!({"id": "cell-2", "cell_type": "markdown"}),
+        ];
+        let idx = resolve_cell_index(&cells, Some("cell-2"), NotebookEditMode::Replace).unwrap();
+        assert_eq!(idx, 1);
+    }
+
+    #[test]
+    fn resolve_cell_index_id_not_found_errors() {
+        let cells = vec![json!({"id": "cell-1", "cell_type": "code"})];
+        let result = resolve_cell_index(&cells, Some("cell-99"), NotebookEditMode::Replace);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Cell id not found"));
+    }
+
+    #[test]
+    fn resolve_cell_index_no_id_returns_last() {
+        let cells = vec![
+            json!({"id": "cell-1"}),
+            json!({"id": "cell-2"}),
+            json!({"id": "cell-3"}),
+        ];
+        let idx = resolve_cell_index(&cells, None, NotebookEditMode::Replace).unwrap();
+        assert_eq!(idx, 2);
+    }
+
+    // --- require_notebook_source ---
+
+    #[test]
+    fn require_notebook_source_delete_mode_none_ok() {
+        let result = require_notebook_source(None, NotebookEditMode::Delete).unwrap();
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn require_notebook_source_insert_mode_none_errors() {
+        let result = require_notebook_source(None, NotebookEditMode::Insert);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn require_notebook_source_replace_mode_none_errors() {
+        let result = require_notebook_source(None, NotebookEditMode::Replace);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn require_notebook_source_insert_with_source_ok() {
+        let result =
+            require_notebook_source(Some(String::from("code")), NotebookEditMode::Insert).unwrap();
+        assert_eq!(result, "code");
+    }
+
+    // --- detect_first_command ---
+
+    #[test]
+    fn detect_first_command_true_exists() {
+        // `true` is universally available on Unix
+        let result = detect_first_command(&["true"]);
+        assert_eq!(result, Some("true"));
+    }
+
+    #[test]
+    fn detect_first_command_nonexistent_returns_none() {
+        let result = detect_first_command(&["__nonexistent_cmd_12345__"]);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn detect_first_command_picks_first_available() {
+        let result = detect_first_command(&["__bad__", "true"]);
+        assert_eq!(result, Some("true"));
+    }
+
+    // --- command_exists ---
+
+    #[test]
+    fn command_exists_true_cmd() {
+        assert!(command_exists("true"));
+    }
+
+    #[test]
+    fn command_exists_nonexistent_cmd() {
+        assert!(!command_exists("__colotcook_test_nonexistent__"));
+    }
+
+    // --- iso8601_timestamp ---
+
+    #[test]
+    fn iso8601_timestamp_nonempty() {
+        let ts = iso8601_timestamp();
+        assert!(!ts.is_empty());
+    }
+
+    // --- is_image_path ---
+
+    #[test]
+    fn is_image_path_png() {
+        assert!(is_image_path(std::path::Path::new("photo.png")));
+    }
+
+    #[test]
+    fn is_image_path_jpg() {
+        assert!(is_image_path(std::path::Path::new("img.jpg")));
+    }
+
+    #[test]
+    fn is_image_path_svg() {
+        assert!(is_image_path(std::path::Path::new("icon.svg")));
+    }
+
+    #[test]
+    fn is_image_path_txt_not_image() {
+        assert!(!is_image_path(std::path::Path::new("readme.txt")));
+    }
+
+    #[test]
+    fn is_image_path_no_extension() {
+        assert!(!is_image_path(std::path::Path::new("Makefile")));
+    }
+
+    // --- execute_sleep validation ---
+
+    #[test]
+    fn execute_sleep_exceeds_max_errors() {
+        let input = SleepInput {
+            duration_ms: MAX_SLEEP_DURATION_MS + 1,
+        };
+        let result = execute_sleep(input);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exceeds maximum"));
+    }
+
+    #[test]
+    fn execute_sleep_zero_ok() {
+        let input = SleepInput { duration_ms: 0 };
+        let result = execute_sleep(input).unwrap();
+        assert_eq!(result.duration_ms, 0);
+    }
+
+    // --- resolve_repl_runtime ---
+
+    #[test]
+    fn resolve_repl_runtime_unsupported_errors() {
+        let result = resolve_repl_runtime("cobol");
+        assert!(result.is_err());
+        let err = result.err().unwrap();
+        assert!(err.contains("unsupported"), "error was: {err}");
+    }
+
+    #[test]
+    fn resolve_repl_runtime_python_variants() {
+        // py alias — may or may not have python installed, just check no panic
+        let _ = resolve_repl_runtime("py");
+    }
+
+    #[test]
+    fn resolve_repl_runtime_javascript_variants() {
+        // js alias — may or may not be installed
+        let _ = resolve_repl_runtime("js");
+    }
+
+    #[test]
+    fn resolve_repl_runtime_bash_variant() {
+        // shell alias — bash or sh should be available
+        let result = resolve_repl_runtime("shell");
+        assert!(
+            result.is_ok(),
+            "expected bash/sh to be available, got error"
+        );
+    }
+}

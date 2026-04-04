@@ -411,3 +411,315 @@ pub(crate) fn dedupe_hits(hits: &mut Vec<SearchHit>) {
     let mut seen = BTreeSet::new();
     hits.retain(|hit| seen.insert(hit.url.clone()));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- normalize_fetch_url ---
+
+    #[test]
+    fn normalize_fetch_url_https_unchanged() {
+        let url = normalize_fetch_url("https://example.com/").unwrap();
+        assert!(url.starts_with("https://"));
+    }
+
+    #[test]
+    fn normalize_fetch_url_http_upgraded_to_https() {
+        let url = normalize_fetch_url("http://example.com/").unwrap();
+        assert!(url.starts_with("https://"), "expected https upgrade, got: {url}");
+    }
+
+    #[test]
+    fn normalize_fetch_url_http_localhost_stays_http() {
+        let url = normalize_fetch_url("http://localhost:8080/").unwrap();
+        assert!(url.starts_with("http://"), "localhost should stay http, got: {url}");
+    }
+
+    #[test]
+    fn normalize_fetch_url_http_127_0_0_1_stays_http() {
+        let url = normalize_fetch_url("http://127.0.0.1:3000/").unwrap();
+        assert!(url.starts_with("http://"));
+    }
+
+    #[test]
+    fn normalize_fetch_url_invalid_errors() {
+        let result = normalize_fetch_url("not-a-url");
+        assert!(result.is_err());
+    }
+
+    // --- build_search_url ---
+
+    #[test]
+    fn build_search_url_contains_query() {
+        let url = build_search_url("rust lang").unwrap();
+        let query = url.query().unwrap_or("");
+        assert!(query.contains("rust"), "query params: {query}");
+    }
+
+    #[test]
+    fn build_search_url_default_uses_duckduckgo() {
+        std::env::remove_var("COLOTCOOK_WEB_SEARCH_BASE_URL");
+        let url = build_search_url("test query").unwrap();
+        assert!(
+            url.host_str() == Some("html.duckduckgo.com"),
+            "host: {:?}",
+            url.host_str()
+        );
+    }
+
+    #[test]
+    fn build_search_url_env_override() {
+        std::env::set_var("COLOTCOOK_WEB_SEARCH_BASE_URL", "https://mysearch.example.com/");
+        let url = build_search_url("my query").unwrap();
+        assert_eq!(url.host_str(), Some("mysearch.example.com"));
+        std::env::remove_var("COLOTCOOK_WEB_SEARCH_BASE_URL");
+    }
+
+    // --- html_to_text ---
+
+    #[test]
+    fn html_to_text_strips_tags() {
+        let result = html_to_text("<p>Hello <b>world</b></p>");
+        assert_eq!(result, "Hello world");
+    }
+
+    #[test]
+    fn html_to_text_empty_string() {
+        let result = html_to_text("");
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn html_to_text_no_tags_passthrough() {
+        let result = html_to_text("plain text");
+        assert_eq!(result, "plain text");
+    }
+
+    #[test]
+    fn html_to_text_collapses_whitespace() {
+        let result = html_to_text("<div>  hello   world  </div>");
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn html_to_text_decodes_entities() {
+        let result = html_to_text("<p>a &amp; b &lt;3&gt;</p>");
+        assert!(result.contains('&'));
+        assert!(result.contains('<'));
+    }
+
+    // --- decode_html_entities ---
+
+    #[test]
+    fn decode_html_entities_amp() {
+        assert_eq!(decode_html_entities("a &amp; b"), "a & b");
+    }
+
+    #[test]
+    fn decode_html_entities_lt_gt() {
+        assert_eq!(decode_html_entities("&lt;div&gt;"), "<div>");
+    }
+
+    #[test]
+    fn decode_html_entities_quot() {
+        assert_eq!(decode_html_entities("&quot;hello&quot;"), "\"hello\"");
+    }
+
+    #[test]
+    fn decode_html_entities_apos() {
+        assert_eq!(decode_html_entities("it&#39;s"), "it's");
+    }
+
+    #[test]
+    fn decode_html_entities_nbsp() {
+        assert_eq!(decode_html_entities("a&nbsp;b"), "a b");
+    }
+
+    #[test]
+    fn decode_html_entities_no_entities_unchanged() {
+        assert_eq!(decode_html_entities("hello world"), "hello world");
+    }
+
+    // --- collapse_whitespace ---
+
+    #[test]
+    fn collapse_whitespace_multiple_spaces() {
+        assert_eq!(collapse_whitespace("a  b   c"), "a b c");
+    }
+
+    #[test]
+    fn collapse_whitespace_tabs_and_newlines() {
+        assert_eq!(collapse_whitespace("a\t\nb"), "a b");
+    }
+
+    #[test]
+    fn collapse_whitespace_empty_string() {
+        assert_eq!(collapse_whitespace(""), "");
+    }
+
+    #[test]
+    fn collapse_whitespace_leading_trailing() {
+        assert_eq!(collapse_whitespace("  hello  "), "hello");
+    }
+
+    // --- normalize_domain_filter ---
+
+    #[test]
+    fn normalize_domain_filter_plain_domain() {
+        assert_eq!(normalize_domain_filter("example.com"), "example.com");
+    }
+
+    #[test]
+    fn normalize_domain_filter_with_scheme() {
+        assert_eq!(
+            normalize_domain_filter("https://example.com/"),
+            "example.com"
+        );
+    }
+
+    #[test]
+    fn normalize_domain_filter_uppercase_lowercased() {
+        assert_eq!(normalize_domain_filter("Example.COM"), "example.com");
+    }
+
+    #[test]
+    fn normalize_domain_filter_leading_dot_stripped() {
+        assert_eq!(normalize_domain_filter(".example.com"), "example.com");
+    }
+
+    #[test]
+    fn normalize_domain_filter_trailing_slash_stripped() {
+        assert_eq!(normalize_domain_filter("example.com/"), "example.com");
+    }
+
+    #[test]
+    fn normalize_domain_filter_empty_string() {
+        assert_eq!(normalize_domain_filter(""), "");
+    }
+
+    // --- dedupe_hits ---
+
+    #[test]
+    fn dedupe_hits_removes_duplicates() {
+        let mut hits = vec![
+            SearchHit {
+                title: String::from("A"),
+                url: String::from("https://a.com"),
+            },
+            SearchHit {
+                title: String::from("B"),
+                url: String::from("https://a.com"),
+            },
+            SearchHit {
+                title: String::from("C"),
+                url: String::from("https://b.com"),
+            },
+        ];
+        dedupe_hits(&mut hits);
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].url, "https://a.com");
+        assert_eq!(hits[1].url, "https://b.com");
+    }
+
+    #[test]
+    fn dedupe_hits_no_duplicates_unchanged() {
+        let mut hits = vec![
+            SearchHit {
+                title: String::from("A"),
+                url: String::from("https://a.com"),
+            },
+            SearchHit {
+                title: String::from("B"),
+                url: String::from("https://b.com"),
+            },
+        ];
+        dedupe_hits(&mut hits);
+        assert_eq!(hits.len(), 2);
+    }
+
+    #[test]
+    fn dedupe_hits_empty_vec() {
+        let mut hits: Vec<SearchHit> = vec![];
+        dedupe_hits(&mut hits);
+        assert!(hits.is_empty());
+    }
+
+    // --- host_matches_list ---
+
+    #[test]
+    fn host_matches_list_exact_match() {
+        let domains = vec![String::from("example.com")];
+        assert!(host_matches_list("https://example.com/path", &domains));
+    }
+
+    #[test]
+    fn host_matches_list_subdomain_match() {
+        let domains = vec![String::from("example.com")];
+        assert!(host_matches_list("https://sub.example.com/", &domains));
+    }
+
+    #[test]
+    fn host_matches_list_no_match() {
+        let domains = vec![String::from("example.com")];
+        assert!(!host_matches_list("https://other.com/", &domains));
+    }
+
+    #[test]
+    fn host_matches_list_invalid_url() {
+        let domains = vec![String::from("example.com")];
+        assert!(!host_matches_list("not-a-url", &domains));
+    }
+
+    #[test]
+    fn host_matches_list_empty_domains() {
+        let domains: Vec<String> = vec![];
+        assert!(!host_matches_list("https://example.com/", &domains));
+    }
+
+    // --- extract_quoted_value ---
+
+    #[test]
+    fn extract_quoted_value_double_quoted() {
+        let result = extract_quoted_value("\"hello\" rest");
+        assert_eq!(result, Some((String::from("hello"), " rest")));
+    }
+
+    #[test]
+    fn extract_quoted_value_single_quoted() {
+        let result = extract_quoted_value("'world' more");
+        assert_eq!(result, Some((String::from("world"), " more")));
+    }
+
+    #[test]
+    fn extract_quoted_value_no_quote_returns_none() {
+        let result = extract_quoted_value("no quote here");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn extract_quoted_value_empty_string() {
+        let result = extract_quoted_value("");
+        assert!(result.is_none());
+    }
+
+    // --- normalize_fetched_content ---
+
+    #[test]
+    fn normalize_fetched_content_html_strips_tags() {
+        let result = normalize_fetched_content("<b>bold</b>", "text/html");
+        assert_eq!(result, "bold");
+    }
+
+    #[test]
+    fn normalize_fetched_content_json_passthrough() {
+        let result = normalize_fetched_content(r#"{"key":"val"}"#, "application/json");
+        assert_eq!(result, r#"{"key":"val"}"#);
+    }
+
+    #[test]
+    fn normalize_fetched_content_plain_text_trimmed() {
+        let result = normalize_fetched_content("  hello  ", "text/plain");
+        assert_eq!(result, "hello");
+    }
+}

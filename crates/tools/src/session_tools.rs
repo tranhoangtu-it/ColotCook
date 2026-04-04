@@ -141,3 +141,210 @@ pub(crate) fn parse_skill_description(contents: &str) -> Option<String> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{TodoItem, TodoStatus};
+
+    fn make_todo(content: &str, active_form: &str, status: TodoStatus) -> TodoItem {
+        TodoItem {
+            content: content.to_string(),
+            active_form: active_form.to_string(),
+            status,
+        }
+    }
+
+    // --- validate_todos ---
+
+    #[test]
+    fn validate_todos_empty_list_errors() {
+        let result = validate_todos(&[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"));
+    }
+
+    #[test]
+    fn validate_todos_valid_list_ok() {
+        let todos = vec![make_todo("Fix bug", "Fixing the bug", TodoStatus::Pending)];
+        assert!(validate_todos(&todos).is_ok());
+    }
+
+    #[test]
+    fn validate_todos_empty_content_errors() {
+        let todos = vec![make_todo("", "Do something", TodoStatus::Pending)];
+        let result = validate_todos(&todos);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("content"));
+    }
+
+    #[test]
+    fn validate_todos_whitespace_only_content_errors() {
+        let todos = vec![make_todo("   ", "Do something", TodoStatus::Pending)];
+        let result = validate_todos(&todos);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_todos_empty_active_form_errors() {
+        let todos = vec![make_todo("Fix bug", "", TodoStatus::Pending)];
+        let result = validate_todos(&todos);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("activeForm"));
+    }
+
+    #[test]
+    fn validate_todos_whitespace_active_form_errors() {
+        let todos = vec![make_todo("Fix bug", "   ", TodoStatus::Pending)];
+        let result = validate_todos(&todos);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_todos_multiple_in_progress_allowed() {
+        let todos = vec![
+            make_todo("Task 1", "Doing task 1", TodoStatus::InProgress),
+            make_todo("Task 2", "Doing task 2", TodoStatus::InProgress),
+        ];
+        assert!(validate_todos(&todos).is_ok());
+    }
+
+    #[test]
+    fn validate_todos_all_completed_allowed() {
+        let todos = vec![
+            make_todo("Task 1", "Done 1", TodoStatus::Completed),
+            make_todo("Task 2", "Done 2", TodoStatus::Completed),
+        ];
+        assert!(validate_todos(&todos).is_ok());
+    }
+
+    // --- todo_store_path ---
+
+    #[test]
+    fn todo_store_path_env_override() {
+        std::env::set_var("COLOTCOOK_TODO_STORE", "/tmp/my-todos.json");
+        let path = todo_store_path().unwrap();
+        assert_eq!(path, std::path::PathBuf::from("/tmp/my-todos.json"));
+        std::env::remove_var("COLOTCOOK_TODO_STORE");
+    }
+
+    #[test]
+    fn todo_store_path_default_uses_cwd() {
+        std::env::remove_var("COLOTCOOK_TODO_STORE");
+        let path = todo_store_path().unwrap();
+        assert!(
+            path.to_string_lossy().contains(".colotcook-todos.json"),
+            "path was: {}",
+            path.display()
+        );
+    }
+
+    // --- parse_skill_description ---
+
+    #[test]
+    fn parse_skill_description_found() {
+        let contents = "name: my-skill\ndescription: Does cool things\nother: value";
+        let desc = parse_skill_description(contents);
+        assert_eq!(desc, Some(String::from("Does cool things")));
+    }
+
+    #[test]
+    fn parse_skill_description_not_found() {
+        let contents = "name: my-skill\nother: value";
+        assert_eq!(parse_skill_description(contents), None);
+    }
+
+    #[test]
+    fn parse_skill_description_empty_value_skipped() {
+        let contents = "description:   \nname: my-skill";
+        assert_eq!(parse_skill_description(contents), None);
+    }
+
+    #[test]
+    fn parse_skill_description_trims_whitespace() {
+        let contents = "description:   Trimmed value  ";
+        let desc = parse_skill_description(contents).unwrap();
+        assert_eq!(desc, "Trimmed value");
+    }
+
+    // --- execute_todo_write with temp store ---
+
+    fn temp_todo_path(suffix: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("colotcook-test-todos-{suffix}.json"))
+    }
+
+    #[test]
+    fn execute_todo_write_all_completed_clears_store() {
+        let path = temp_todo_path("completed");
+        let path_str = path.to_string_lossy().to_string();
+        std::env::set_var("COLOTCOOK_TODO_STORE", &path_str);
+
+        let todos = vec![
+            make_todo("Task 1", "Done 1", TodoStatus::Completed),
+            make_todo("Task 2", "Done 2", TodoStatus::Completed),
+            make_todo("Task 3", "Done 3", TodoStatus::Completed),
+        ];
+        let input = crate::types::TodoWriteInput { todos };
+        let result = execute_todo_write(input).unwrap();
+
+        // When all completed, persisted list should be empty
+        let written = std::fs::read_to_string(&path).unwrap();
+        let persisted: Vec<TodoItem> = serde_json::from_str(&written).unwrap();
+        assert!(persisted.is_empty());
+        assert_eq!(result.new_todos.len(), 3);
+
+        std::env::remove_var("COLOTCOOK_TODO_STORE");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn execute_todo_write_pending_todos_persisted() {
+        let path = temp_todo_path("pending");
+        let path_str = path.to_string_lossy().to_string();
+        std::env::set_var("COLOTCOOK_TODO_STORE", &path_str);
+
+        let todos = vec![
+            make_todo("Task 1", "Do task 1", TodoStatus::Pending),
+            make_todo("Task 2", "Do task 2", TodoStatus::InProgress),
+        ];
+        let input = crate::types::TodoWriteInput {
+            todos: todos.clone(),
+        };
+        let result = execute_todo_write(input).unwrap();
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        let persisted: Vec<TodoItem> = serde_json::from_str(&written).unwrap();
+        assert_eq!(persisted.len(), 2);
+        assert!(result.verification_nudge_needed.is_none());
+
+        std::env::remove_var("COLOTCOOK_TODO_STORE");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn execute_todo_write_empty_todos_errors() {
+        let result = execute_todo_write(crate::types::TodoWriteInput { todos: vec![] });
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn execute_todo_write_verification_nudge_when_all_done_no_verify_word() {
+        let path = temp_todo_path("nudge");
+        let path_str = path.to_string_lossy().to_string();
+        std::env::set_var("COLOTCOOK_TODO_STORE", &path_str);
+
+        let todos = vec![
+            make_todo("Task 1", "Done 1", TodoStatus::Completed),
+            make_todo("Task 2", "Done 2", TodoStatus::Completed),
+            make_todo("Task 3", "Done 3", TodoStatus::Completed),
+        ];
+        let input = crate::types::TodoWriteInput { todos };
+        let result = execute_todo_write(input).unwrap();
+
+        // Should trigger nudge since all 3+ completed and no "verif" word
+        assert_eq!(result.verification_nudge_needed, Some(true));
+
+        std::env::remove_var("COLOTCOOK_TODO_STORE");
+        let _ = std::fs::remove_file(&path);
+    }
+}
