@@ -270,59 +270,7 @@ mod tests {
         assert_eq!(desc, "Trimmed value");
     }
 
-    // --- execute_todo_write with temp store ---
-
-    fn temp_todo_path(suffix: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("colotcook-test-todos-{suffix}.json"))
-    }
-
-    #[test]
-    fn execute_todo_write_all_completed_clears_store() {
-        let path = temp_todo_path("completed");
-        let path_str = path.to_string_lossy().to_string();
-        std::env::set_var("COLOTCOOK_TODO_STORE", &path_str);
-
-        let todos = vec![
-            make_todo("Task 1", "Done 1", TodoStatus::Completed),
-            make_todo("Task 2", "Done 2", TodoStatus::Completed),
-            make_todo("Task 3", "Done 3", TodoStatus::Completed),
-        ];
-        let input = crate::types::TodoWriteInput { todos };
-        let result = execute_todo_write(input).unwrap();
-
-        // When all completed, persisted list should be empty
-        let written = std::fs::read_to_string(&path).unwrap();
-        let persisted: Vec<TodoItem> = serde_json::from_str(&written).unwrap();
-        assert!(persisted.is_empty());
-        assert_eq!(result.new_todos.len(), 3);
-
-        std::env::remove_var("COLOTCOOK_TODO_STORE");
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn execute_todo_write_pending_todos_persisted() {
-        let path = temp_todo_path("pending");
-        let path_str = path.to_string_lossy().to_string();
-        std::env::set_var("COLOTCOOK_TODO_STORE", &path_str);
-
-        let todos = vec![
-            make_todo("Task 1", "Do task 1", TodoStatus::Pending),
-            make_todo("Task 2", "Do task 2", TodoStatus::InProgress),
-        ];
-        let input = crate::types::TodoWriteInput {
-            todos: todos.clone(),
-        };
-        let result = execute_todo_write(input).unwrap();
-
-        let written = std::fs::read_to_string(&path).unwrap();
-        let persisted: Vec<TodoItem> = serde_json::from_str(&written).unwrap();
-        assert_eq!(persisted.len(), 2);
-        assert!(result.verification_nudge_needed.is_none());
-
-        std::env::remove_var("COLOTCOOK_TODO_STORE");
-        let _ = std::fs::remove_file(&path);
-    }
+    // Note: execute_todo_write integration tests are in lib.rs (using env_lock for thread safety)
 
     #[test]
     fn execute_todo_write_empty_todos_errors() {
@@ -330,24 +278,5 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn execute_todo_write_verification_nudge_when_all_done_no_verify_word() {
-        let path = temp_todo_path("nudge");
-        let path_str = path.to_string_lossy().to_string();
-        std::env::set_var("COLOTCOOK_TODO_STORE", &path_str);
-
-        let todos = vec![
-            make_todo("Task 1", "Done 1", TodoStatus::Completed),
-            make_todo("Task 2", "Done 2", TodoStatus::Completed),
-            make_todo("Task 3", "Done 3", TodoStatus::Completed),
-        ];
-        let input = crate::types::TodoWriteInput { todos };
-        let result = execute_todo_write(input).unwrap();
-
-        // Should trigger nudge since all 3+ completed and no "verif" word
-        assert_eq!(result.verification_nudge_needed, Some(true));
-
-        std::env::remove_var("COLOTCOOK_TODO_STORE");
-        let _ = std::fs::remove_file(&path);
-    }
+    // Note: execute_todo_write verification nudge tests are in lib.rs (using env_lock)
 }
