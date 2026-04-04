@@ -9,6 +9,7 @@ use crate::types::{
     SearchHit, WebFetchInput, WebFetchOutput, WebSearchInput, WebSearchOutput, WebSearchResultItem,
 };
 
+/// Fetch a URL and return a summarized `WebFetchOutput`.
 pub(crate) fn execute_web_fetch(input: &WebFetchInput) -> Result<WebFetchOutput, String> {
     let started = Instant::now();
     let client = build_http_client()?;
@@ -43,6 +44,7 @@ pub(crate) fn execute_web_fetch(input: &WebFetchInput) -> Result<WebFetchOutput,
     })
 }
 
+/// Search DuckDuckGo and return extracted hits.
 pub(crate) fn execute_web_search(input: &WebSearchInput) -> Result<WebSearchOutput, String> {
     let started = Instant::now();
     let client = build_http_client()?;
@@ -97,6 +99,7 @@ pub(crate) fn execute_web_search(input: &WebSearchInput) -> Result<WebSearchOutp
     })
 }
 
+/// Build the shared blocking HTTP client.
 pub(crate) fn build_http_client() -> Result<Client, String> {
     Client::builder()
         .timeout(Duration::from_secs(20))
@@ -106,6 +109,7 @@ pub(crate) fn build_http_client() -> Result<Client, String> {
         .map_err(|error| error.to_string())
 }
 
+/// Ensure the URL has a scheme (adds `https://` if missing).
 pub(crate) fn normalize_fetch_url(url: &str) -> Result<String, String> {
     let parsed = reqwest::Url::parse(url).map_err(|error| error.to_string())?;
     if parsed.scheme() == "http" {
@@ -121,6 +125,7 @@ pub(crate) fn normalize_fetch_url(url: &str) -> Result<String, String> {
     Ok(parsed.to_string())
 }
 
+/// Build the DuckDuckGo lite search URL for a query.
 pub(crate) fn build_search_url(query: &str) -> Result<reqwest::Url, String> {
     if let Ok(base) = std::env::var("COLOTCOOK_WEB_SEARCH_BASE_URL") {
         let mut url = reqwest::Url::parse(&base).map_err(|error| error.to_string())?;
@@ -134,6 +139,7 @@ pub(crate) fn build_search_url(query: &str) -> Result<reqwest::Url, String> {
     Ok(url)
 }
 
+/// Convert fetched body to plain text based on content-type.
 pub(crate) fn normalize_fetched_content(body: &str, content_type: &str) -> String {
     if content_type.contains("html") {
         html_to_text(body)
@@ -142,6 +148,7 @@ pub(crate) fn normalize_fetched_content(body: &str, content_type: &str) -> Strin
     }
 }
 
+/// Build the result string shown to the model after fetching.
 pub(crate) fn summarize_web_fetch(
     url: &str,
     prompt: &str,
@@ -167,6 +174,7 @@ pub(crate) fn summarize_web_fetch(
     format!("Fetched {url}\n{detail}")
 }
 
+/// Extract a page title from HTML or plain text content.
 pub(crate) fn extract_title(content: &str, raw_body: &str, content_type: &str) -> Option<String> {
     if content_type.contains("html") {
         let lowered = raw_body.to_lowercase();
@@ -191,6 +199,7 @@ pub(crate) fn extract_title(content: &str, raw_body: &str, content_type: &str) -
     None
 }
 
+/// Strip HTML tags and decode entities to produce readable text.
 pub(crate) fn html_to_text(html: &str) -> String {
     let mut text = String::with_capacity(html.len());
     let mut in_tag = false;
@@ -221,6 +230,7 @@ pub(crate) fn html_to_text(html: &str) -> String {
     collapse_whitespace(&decode_html_entities(&text))
 }
 
+/// Replace common HTML entities with their UTF-8 equivalents.
 pub(crate) fn decode_html_entities(input: &str) -> String {
     input
         .replace("&amp;", "&")
@@ -231,10 +241,12 @@ pub(crate) fn decode_html_entities(input: &str) -> String {
         .replace("&nbsp;", " ")
 }
 
+/// Collapse consecutive whitespace characters into a single space.
 pub(crate) fn collapse_whitespace(input: &str) -> String {
     input.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Truncate text to `max_chars`, appending `…` if cut.
 pub(crate) fn preview_text(input: &str, max_chars: usize) -> String {
     if input.chars().count() <= max_chars {
         return input.to_string();
@@ -243,6 +255,7 @@ pub(crate) fn preview_text(input: &str, max_chars: usize) -> String {
     format!("{}…", shortened.trim_end())
 }
 
+/// Extract search result hits from DuckDuckGo HTML.
 pub(crate) fn extract_search_hits(html: &str) -> Vec<SearchHit> {
     let mut hits = Vec::new();
     let mut remaining = html;
@@ -280,6 +293,7 @@ pub(crate) fn extract_search_hits(html: &str) -> Vec<SearchHit> {
     hits
 }
 
+/// Extract search result hits from DuckDuckGo HTML.
 pub(crate) fn extract_search_hits_from_generic_links(html: &str) -> Vec<SearchHit> {
     let mut hits = Vec::new();
     let mut remaining = html;
@@ -322,6 +336,7 @@ pub(crate) fn extract_search_hits_from_generic_links(html: &str) -> Vec<SearchHi
     hits
 }
 
+/// Extract a double-quoted value from the start of `input`.
 pub(crate) fn extract_quoted_value(input: &str) -> Option<(String, &str)> {
     let quote = input.chars().next()?;
     if quote != '"' && quote != '\'' {
@@ -332,6 +347,7 @@ pub(crate) fn extract_quoted_value(input: &str) -> Option<(String, &str)> {
     Some((rest[..end].to_string(), &rest[end + quote.len_utf8()..]))
 }
 
+/// Decode a DuckDuckGo redirect URL to the real destination.
 pub(crate) fn decode_duckduckgo_redirect(url: &str) -> Option<String> {
     if url.starts_with("http://") || url.starts_with("https://") {
         return Some(html_entity_decode_url(url));
@@ -356,10 +372,12 @@ pub(crate) fn decode_duckduckgo_redirect(url: &str) -> Option<String> {
     Some(joined)
 }
 
+/// Decode `&amp;` entities inside a URL string.
 pub(crate) fn html_entity_decode_url(url: &str) -> String {
     decode_html_entities(url)
 }
 
+/// Check whether a URL's host matches any domain in `domains`.
 pub(crate) fn host_matches_list(url: &str, domains: &[String]) -> bool {
     let Ok(parsed) = reqwest::Url::parse(url) else {
         return false;
@@ -374,6 +392,7 @@ pub(crate) fn host_matches_list(url: &str, domains: &[String]) -> bool {
     })
 }
 
+/// Normalize a domain filter string (strip scheme and trailing slash).
 pub(crate) fn normalize_domain_filter(domain: &str) -> String {
     let trimmed = domain.trim();
     let candidate = reqwest::Url::parse(trimmed)
@@ -387,6 +406,7 @@ pub(crate) fn normalize_domain_filter(domain: &str) -> String {
         .to_ascii_lowercase()
 }
 
+/// Remove duplicate search hits by URL.
 pub(crate) fn dedupe_hits(hits: &mut Vec<SearchHit>) {
     let mut seen = BTreeSet::new();
     hits.retain(|hit| seen.insert(hit.url.clone()));

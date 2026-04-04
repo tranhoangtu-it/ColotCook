@@ -12,18 +12,21 @@ use crate::agents_and_skills::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Result of dispatching a slash command.
 pub struct SlashCommandResult {
     pub message: String,
     pub session: Session,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Result of a `/plugins` command invocation.
 pub struct PluginsCommandResult {
     pub message: String,
     pub reload_runtime: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// Source location of an agent or skill definition.
 pub(crate) enum DefinitionSource {
     ProjectCodex,
     ProjectClaude,
@@ -33,6 +36,7 @@ pub(crate) enum DefinitionSource {
 }
 
 impl DefinitionSource {
+    /// Return a human-readable label for this source.
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::ProjectCodex => "Project (.codex)",
@@ -45,6 +49,7 @@ impl DefinitionSource {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Summary of a discovered agent.
 pub(crate) struct AgentSummary {
     pub name: String,
     pub description: Option<String>,
@@ -55,6 +60,7 @@ pub(crate) struct AgentSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Summary of a discovered skill.
 pub(crate) struct SkillSummary {
     pub name: String,
     pub description: Option<String>,
@@ -64,12 +70,14 @@ pub(crate) struct SkillSummary {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Origin type of a discovered skill.
 pub(crate) enum SkillOrigin {
     SkillsDir,
     LegacyCommandsDir,
 }
 
 impl SkillOrigin {
+    /// Return an optional detail label for this origin.
     pub(crate) fn detail_label(self) -> Option<&'static str> {
         match self {
             Self::SkillsDir => None,
@@ -79,6 +87,7 @@ impl SkillOrigin {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A root directory where skills are discovered.
 pub(crate) struct SkillRoot {
     pub source: DefinitionSource,
     pub path: PathBuf,
@@ -86,6 +95,7 @@ pub(crate) struct SkillRoot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Metadata about a freshly installed skill.
 pub(crate) struct InstalledSkill {
     pub invocation_name: String,
     pub display_name: Option<String>,
@@ -95,12 +105,14 @@ pub(crate) struct InstalledSkill {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Source type for installing a skill.
 pub(crate) enum SkillInstallSource {
     Directory { root: PathBuf, prompt_path: PathBuf },
     MarkdownFile { path: PathBuf },
 }
 
 #[allow(clippy::too_many_lines)]
+/// Dispatch a `/plugins` command to install/enable/disable/uninstall.
 pub fn handle_plugins_slash_command(
     action: Option<&str>,
     target: Option<&str>,
@@ -212,6 +224,7 @@ pub fn handle_plugins_slash_command(
     }
 }
 
+/// Dispatch an `/agents` command and return the rendered report.
 pub fn handle_agents_slash_command(args: Option<&str>, cwd: &Path) -> std::io::Result<String> {
     match normalize_optional_args(args) {
         None | Some("list") => {
@@ -224,6 +237,7 @@ pub fn handle_agents_slash_command(args: Option<&str>, cwd: &Path) -> std::io::R
     }
 }
 
+/// Dispatch a `/skills` command and return the rendered report.
 pub fn handle_skills_slash_command(args: Option<&str>, cwd: &Path) -> std::io::Result<String> {
     match normalize_optional_args(args) {
         None | Some("list") => {
@@ -246,6 +260,7 @@ pub fn handle_skills_slash_command(args: Option<&str>, cwd: &Path) -> std::io::R
 }
 
 #[must_use]
+/// Render the plugins listing report.
 pub fn render_plugins_report(plugins: &[PluginSummary]) -> String {
     let mut lines = vec!["Plugins".to_string()];
     if plugins.is_empty() {
@@ -267,6 +282,7 @@ pub fn render_plugins_report(plugins: &[PluginSummary]) -> String {
     lines.join("\n")
 }
 
+/// Render a report after installing a plugin.
 pub(crate) fn render_plugin_install_report(
     plugin_id: &str,
     plugin: Option<&PluginSummary>,
@@ -280,6 +296,7 @@ pub(crate) fn render_plugin_install_report(
     )
 }
 
+/// Resolve a plugin target to an install-ready path.
 pub(crate) fn resolve_plugin_target(
     manager: &PluginManager,
     target: &str,

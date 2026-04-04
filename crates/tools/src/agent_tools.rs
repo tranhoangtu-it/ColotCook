@@ -31,8 +31,11 @@ pub(crate) struct AgentJob {
     pub mcp_bridge: Option<McpBridge>,
 }
 
+/// Default model for sub-agents.
 pub(crate) const DEFAULT_AGENT_MODEL: &str = "claude-opus-4-6";
+/// Default system date string for sub-agent prompts.
 pub(crate) const DEFAULT_AGENT_SYSTEM_DATE: &str = "2026-03-31";
+/// Maximum turn iterations before a sub-agent stops.
 pub(crate) const DEFAULT_AGENT_MAX_ITERATIONS: usize = 32;
 
 /// Global MCP bridge that sub-agents inherit from the main agent.
@@ -45,10 +48,12 @@ pub fn set_global_mcp_bridge(bridge: McpBridge) {
     let _ = GLOBAL_MCP_BRIDGE.set(bridge);
 }
 
+/// Run a sub-agent from the given `AgentInput`.
 pub(crate) fn execute_agent(input: AgentInput) -> Result<AgentOutput, String> {
     execute_agent_with_spawn(input, spawn_agent_job)
 }
 
+/// Run a sub-agent, injecting a custom spawner (useful for testing).
 pub(crate) fn execute_agent_with_spawn<F>(
     input: AgentInput,
     spawn_fn: F,
@@ -130,6 +135,7 @@ where
     Ok(manifest)
 }
 
+/// Spawn a sub-agent job in its own thread.
 pub(crate) fn spawn_agent_job(job: AgentJob) -> Result<(), String> {
     let thread_name = format!("colotcook-agent-{}", job.manifest.agent_id);
     std::thread::Builder::new()
@@ -157,6 +163,7 @@ pub(crate) fn spawn_agent_job(job: AgentJob) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+/// Execute the agent job loop until completion or max iterations.
 pub(crate) fn run_agent_job(job: &AgentJob) -> Result<(), String> {
     let mut runtime = build_agent_runtime(job)?.with_max_iterations(DEFAULT_AGENT_MAX_ITERATIONS);
     let summary = runtime
@@ -166,6 +173,7 @@ pub(crate) fn run_agent_job(job: &AgentJob) -> Result<(), String> {
     persist_agent_terminal_state(&job.manifest, "completed", Some(final_text.as_str()), None)
 }
 
+/// Build a `ConversationRuntime` for the given sub-agent job.
 pub(crate) fn build_agent_runtime(
     job: &AgentJob,
 ) -> Result<ConversationRuntime<ProviderRuntimeClient, SubagentToolExecutor>, String> {
@@ -192,6 +200,7 @@ pub(crate) fn build_agent_runtime(
     ))
 }
 
+/// Load and render the system prompt for a sub-agent type.
 pub(crate) fn build_agent_system_prompt(subagent_type: &str) -> Result<Vec<String>, String> {
     let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
     let mut prompt = load_system_prompt(
@@ -207,6 +216,7 @@ pub(crate) fn build_agent_system_prompt(subagent_type: &str) -> Result<Vec<Strin
     Ok(prompt)
 }
 
+/// Resolve the model to use for a sub-agent.
 pub(crate) fn resolve_agent_model(model: Option<&str>) -> String {
     model
         .map(str::trim)
@@ -215,6 +225,7 @@ pub(crate) fn resolve_agent_model(model: Option<&str>) -> String {
         .to_string()
 }
 
+/// Return the allowed tool set for the given sub-agent type.
 pub(crate) fn allowed_tools_for_subagent(subagent_type: &str) -> BTreeSet<String> {
     let tools = match subagent_type {
         "Explore" => vec![
@@ -296,6 +307,7 @@ pub(crate) fn allowed_tools_for_subagent(subagent_type: &str) -> BTreeSet<String
     tools.into_iter().map(str::to_string).collect()
 }
 
+/// Return the permission policy for sub-agent tool execution.
 pub(crate) fn agent_permission_policy() -> PermissionPolicy {
     mvp_tool_specs().into_iter().fold(
         PermissionPolicy::new(PermissionMode::DangerFullAccess),
@@ -490,6 +502,7 @@ impl AgentOrchestrator {
     }
 }
 
+/// Persist an agent manifest JSON to the agent store.
 pub(crate) fn write_agent_manifest(manifest: &AgentOutput) -> Result<(), String> {
     std::fs::write(
         &manifest.manifest_file,
@@ -498,6 +511,7 @@ pub(crate) fn write_agent_manifest(manifest: &AgentOutput) -> Result<(), String>
     .map_err(|error| error.to_string())
 }
 
+/// Write the final terminal state of an agent run to disk.
 pub(crate) fn persist_agent_terminal_state(
     manifest: &AgentOutput,
     status: &str,
@@ -515,6 +529,7 @@ pub(crate) fn persist_agent_terminal_state(
     write_agent_manifest(&next_manifest)
 }
 
+/// Append a suffix string to an existing agent output file.
 pub(crate) fn append_agent_output(path: &str, suffix: &str) -> Result<(), String> {
     use std::io::Write as _;
 
@@ -526,6 +541,7 @@ pub(crate) fn append_agent_output(path: &str, suffix: &str) -> Result<(), String
         .map_err(|error| error.to_string())
 }
 
+/// Format a structured agent terminal output for display.
 pub(crate) fn format_agent_terminal_output(
     status: &str,
     result: Option<&str>,
@@ -541,6 +557,7 @@ pub(crate) fn format_agent_terminal_output(
     sections.join("")
 }
 
+/// Multi-provider AI client used by sub-agent runtimes.
 pub(crate) struct ProviderRuntimeClient {
     pub runtime: tokio::runtime::Runtime,
     pub client: ProviderClient,
@@ -741,12 +758,14 @@ impl std::fmt::Debug for McpBridge {
     }
 }
 
+/// Tool executor that restricts execution to the allowed tool set.
 pub(crate) struct SubagentToolExecutor {
     pub allowed_tools: BTreeSet<String>,
     pub mcp_bridge: Option<McpBridge>,
 }
 
 impl SubagentToolExecutor {
+    /// Construct an executor with the given allowed-tool set.
     pub(crate) fn new(allowed_tools: BTreeSet<String>) -> Self {
         Self {
             allowed_tools,
@@ -784,6 +803,7 @@ impl ToolExecutor for SubagentToolExecutor {
     }
 }
 
+/// Return tool specs filtered to the allowed set.
 pub(crate) fn tool_specs_for_allowed_tools(
     allowed_tools: Option<&BTreeSet<String>>,
 ) -> Vec<ToolSpec> {
@@ -793,6 +813,7 @@ pub(crate) fn tool_specs_for_allowed_tools(
         .collect()
 }
 
+/// Convert internal messages into API request format.
 pub(crate) fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMessage> {
     messages
         .iter()
@@ -834,6 +855,7 @@ pub(crate) fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMes
         .collect()
 }
 
+/// Append an output content block to the event list.
 pub(crate) fn push_output_block(
     block: OutputContentBlock,
     block_index: u32,
@@ -862,6 +884,7 @@ pub(crate) fn push_output_block(
     }
 }
 
+/// Convert a `MessageResponse` to assistant events.
 pub(crate) fn response_to_events(response: MessageResponse) -> Vec<AssistantEvent> {
     let mut events = Vec::new();
     let mut pending_tools = BTreeMap::new();
@@ -879,6 +902,7 @@ pub(crate) fn response_to_events(response: MessageResponse) -> Vec<AssistantEven
     events
 }
 
+/// Append a prompt-cache record to events if present.
 pub(crate) fn push_prompt_cache_record(client: &ProviderClient, events: &mut Vec<AssistantEvent>) {
     if let Some(record) = client.take_last_prompt_cache_record() {
         if let Some(event) = prompt_cache_record_to_runtime_event(record) {
@@ -887,6 +911,7 @@ pub(crate) fn push_prompt_cache_record(client: &ProviderClient, events: &mut Vec
     }
 }
 
+/// Convert a prompt-cache record to a runtime event.
 pub(crate) fn prompt_cache_record_to_runtime_event(
     record: api::PromptCacheRecord,
 ) -> Option<PromptCacheEvent> {
@@ -900,6 +925,7 @@ pub(crate) fn prompt_cache_record_to_runtime_event(
     })
 }
 
+/// Extract the final assistant text from a turn summary.
 pub(crate) fn final_assistant_text(summary: &runtime::TurnSummary) -> String {
     summary
         .assistant_messages
@@ -918,6 +944,7 @@ pub(crate) fn final_assistant_text(summary: &runtime::TurnSummary) -> String {
         .unwrap_or_default()
 }
 
+/// Return (and create if needed) the agent store directory.
 pub(crate) fn agent_store_dir() -> Result<std::path::PathBuf, String> {
     if let Ok(path) = std::env::var("COLOTCOOK_AGENT_STORE") {
         return Ok(std::path::PathBuf::from(path));
@@ -929,6 +956,7 @@ pub(crate) fn agent_store_dir() -> Result<std::path::PathBuf, String> {
     Ok(cwd.join(".colotcook-agents"))
 }
 
+/// Generate a unique agent run ID.
 pub(crate) fn make_agent_id() -> String {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -937,6 +965,7 @@ pub(crate) fn make_agent_id() -> String {
     format!("agent-{nanos}")
 }
 
+/// Convert a description string into a URL-safe slug.
 pub(crate) fn slugify_agent_name(description: &str) -> String {
     let mut out = description
         .chars()
@@ -954,6 +983,7 @@ pub(crate) fn slugify_agent_name(description: &str) -> String {
     out.trim_matches('-').chars().take(32).collect()
 }
 
+/// Normalize a sub-agent type string (defaults to `researcher`).
 pub(crate) fn normalize_subagent_type(subagent_type: Option<&str>) -> String {
     let trimmed = subagent_type.map(str::trim).unwrap_or_default();
     if trimmed.is_empty() {
@@ -973,6 +1003,7 @@ pub(crate) fn normalize_subagent_type(subagent_type: Option<&str>) -> String {
     }
 }
 
+/// Return the current UTC time as an ISO 8601 string.
 pub(crate) fn iso8601_now() -> String {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

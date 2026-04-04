@@ -13,18 +13,26 @@ use crate::discovery::{
 };
 use crate::registry::PluginError;
 
+/// Marketplace identifier for user-installed external plugins.
 pub(crate) const EXTERNAL_MARKETPLACE: &str = "external";
+/// Marketplace identifier for built-in plugins.
 pub(crate) const BUILTIN_MARKETPLACE: &str = "builtin";
+/// Marketplace identifier for bundled plugins.
 pub(crate) const BUNDLED_MARKETPLACE: &str = "bundled";
+/// Filename for the plugin settings JSON.
 pub(crate) const SETTINGS_FILE_NAME: &str = "settings.json";
+/// Filename for the installed-plugins registry JSON.
 pub(crate) const REGISTRY_FILE_NAME: &str = "installed.json";
+/// Filename for a plugin manifest.
 pub(crate) const MANIFEST_FILE_NAME: &str = "plugin.json";
+/// Relative path to the plugin manifest within a plugin directory.
 pub(crate) const MANIFEST_RELATIVE_PATH: &str = ".colotcook-plugin/plugin.json";
 /// Legacy manifest path for backward compatibility with existing plugins
 pub(crate) const LEGACY_MANIFEST_RELATIVE_PATH: &str = ".claude-plugin/plugin.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// Classification of a plugin by how it was installed.
 pub enum PluginKind {
     Builtin,
     Bundled,
@@ -43,6 +51,7 @@ impl Display for PluginKind {
 
 impl PluginKind {
     #[must_use]
+    /// Return the marketplace string for this kind.
     pub(crate) fn marketplace(self) -> &'static str {
         match self {
             Self::Builtin => BUILTIN_MARKETPLACE,
@@ -53,6 +62,7 @@ impl PluginKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Core metadata for a plugin (id, name, version, etc.).
 pub struct PluginMetadata {
     pub id: String,
     pub name: String,
@@ -65,6 +75,7 @@ pub struct PluginMetadata {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Shell hooks executed around tool calls.
 pub struct PluginHooks {
     #[serde(rename = "PreToolUse", default)]
     pub pre_tool_use: Vec<String>,
@@ -76,6 +87,7 @@ pub struct PluginHooks {
 
 impl PluginHooks {
     #[must_use]
+    /// Return `true` if no hooks are configured.
     pub fn is_empty(&self) -> bool {
         self.pre_tool_use.is_empty()
             && self.post_tool_use.is_empty()
@@ -83,6 +95,7 @@ impl PluginHooks {
     }
 
     #[must_use]
+    /// Merge this hook set with `other`, combining all entries.
     pub fn merged_with(&self, other: &Self) -> Self {
         let mut merged = self.clone();
         merged
@@ -99,6 +112,7 @@ impl PluginHooks {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Lifecycle scripts run on plugin init and shutdown.
 pub struct PluginLifecycle {
     #[serde(rename = "Init", default)]
     pub init: Vec<String>,
@@ -108,12 +122,14 @@ pub struct PluginLifecycle {
 
 impl PluginLifecycle {
     #[must_use]
+    /// Return `true` if no hooks are configured.
     pub fn is_empty(&self) -> bool {
         self.init.is_empty() && self.shutdown.is_empty()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Parsed plugin manifest (validated form of `RawPluginManifest`).
 pub struct PluginManifest {
     pub name: String,
     pub version: String,
@@ -133,6 +149,7 @@ pub struct PluginManifest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// Permission level required for a plugin to operate.
 pub enum PluginPermission {
     Read,
     Write,
@@ -141,6 +158,7 @@ pub enum PluginPermission {
 
 impl PluginPermission {
     #[must_use]
+    /// Return the string representation of this permission level.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Read => "read",
@@ -149,6 +167,7 @@ impl PluginPermission {
         }
     }
 
+    /// Parse a permission level from a string.
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "read" => Some(Self::Read),
@@ -166,6 +185,7 @@ impl AsRef<str> for PluginPermission {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Manifest entry for a single plugin-provided tool.
 pub struct PluginToolManifest {
     pub name: String,
     pub description: String,
@@ -179,6 +199,7 @@ pub struct PluginToolManifest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+/// Permission level required for a specific tool.
 pub enum PluginToolPermission {
     ReadOnly,
     WorkspaceWrite,
@@ -187,6 +208,7 @@ pub enum PluginToolPermission {
 
 impl PluginToolPermission {
     #[must_use]
+    /// Return the string representation of this permission level.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ReadOnly => "read-only",
@@ -195,6 +217,7 @@ impl PluginToolPermission {
         }
     }
 
+    /// Parse a permission level from a string.
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "read-only" => Some(Self::ReadOnly),
@@ -206,6 +229,7 @@ impl PluginToolPermission {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// JSON Schema definition for a plugin tool.
 pub struct PluginToolDefinition {
     pub name: String,
     #[serde(default)]
@@ -215,6 +239,7 @@ pub struct PluginToolDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Manifest entry for a plugin-provided shell command.
 pub struct PluginCommandManifest {
     pub name: String,
     pub description: String,
@@ -222,6 +247,7 @@ pub struct PluginCommandManifest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Raw (unvalidated) plugin manifest as deserialized from JSON.
 pub(crate) struct RawPluginManifest {
     pub name: String,
     pub version: String,
@@ -241,6 +267,7 @@ pub(crate) struct RawPluginManifest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Raw (unvalidated) plugin tool manifest entry.
 pub(crate) struct RawPluginToolManifest {
     pub name: String,
     pub description: String,
@@ -257,6 +284,7 @@ pub(crate) struct RawPluginToolManifest {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// A fully-resolved, executable plugin tool.
 pub struct PluginTool {
     plugin_id: String,
     plugin_name: String,
@@ -269,6 +297,7 @@ pub struct PluginTool {
 
 impl PluginTool {
     #[must_use]
+    /// Construct a new `PluginTool`.
     pub fn new(
         plugin_id: impl Into<String>,
         plugin_name: impl Into<String>,
@@ -290,20 +319,24 @@ impl PluginTool {
     }
 
     #[must_use]
+    /// Return the plugin's marketplace-scoped ID.
     pub fn plugin_id(&self) -> &str {
         &self.plugin_id
     }
 
     #[must_use]
+    /// Return the tool definition (name, description, schema).
     pub fn definition(&self) -> &PluginToolDefinition {
         &self.definition
     }
 
     #[must_use]
+    /// Return the required permission level string.
     pub fn required_permission(&self) -> &str {
         self.required_permission.as_str()
     }
 
+    /// Execute the tool with the given input, returning output or error.
     pub fn execute(&self, input: &Value) -> Result<String, PluginError> {
         let input_json = input.to_string();
         let mut process = Command::new(&self.command);
@@ -354,12 +387,14 @@ pub(crate) fn default_tool_permission_label() -> String {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+/// Source from which a plugin was installed.
 pub enum PluginInstallSource {
     LocalPath { path: PathBuf },
     GitUrl { url: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Installed-plugin entry stored in the registry JSON.
 pub struct InstalledPluginRecord {
     #[serde(default = "default_plugin_kind")]
     pub kind: PluginKind,
@@ -374,6 +409,7 @@ pub struct InstalledPluginRecord {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Registry of all installed plugins persisted to disk.
 pub struct InstalledPluginRegistry {
     #[serde(default)]
     pub plugins: BTreeMap<String, InstalledPluginRecord>,
@@ -384,6 +420,7 @@ fn default_plugin_kind() -> PluginKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// A built-in plugin bundled with the binary.
 pub struct BuiltinPlugin {
     pub(crate) metadata: PluginMetadata,
     pub(crate) hooks: PluginHooks,
@@ -392,6 +429,7 @@ pub struct BuiltinPlugin {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// A plugin bundled as external files alongside the binary.
 pub struct BundledPlugin {
     pub(crate) metadata: PluginMetadata,
     pub(crate) hooks: PluginHooks,
@@ -400,6 +438,7 @@ pub struct BundledPlugin {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// A user-installed plugin from an external source.
 pub struct ExternalPlugin {
     pub(crate) metadata: PluginMetadata,
     pub(crate) hooks: PluginHooks,
@@ -407,6 +446,7 @@ pub struct ExternalPlugin {
     pub(crate) tools: Vec<PluginTool>,
 }
 
+/// Common trait implemented by all plugin kinds.
 pub trait Plugin {
     fn metadata(&self) -> &PluginMetadata;
     fn hooks(&self) -> &PluginHooks;
@@ -418,6 +458,7 @@ pub trait Plugin {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// A resolved plugin, which may be builtin, bundled, or external.
 pub enum PluginDefinition {
     Builtin(BuiltinPlugin),
     Bundled(BundledPlugin),

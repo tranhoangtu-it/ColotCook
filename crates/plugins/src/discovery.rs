@@ -17,6 +17,7 @@ use crate::types::{
     MANIFEST_RELATIVE_PATH,
 };
 
+/// Load a complete plugin definition from a directory.
 pub(crate) fn load_plugin_definition(
     root: &Path,
     kind: PluginKind,
@@ -59,15 +60,18 @@ pub(crate) fn load_plugin_definition(
     })
 }
 
+/// Load and validate the manifest from a plugin directory.
 pub fn load_plugin_from_directory(root: &Path) -> Result<PluginManifest, PluginError> {
     load_manifest_from_directory(root)
 }
 
+/// Load the raw manifest from a directory path.
 pub(crate) fn load_manifest_from_directory(root: &Path) -> Result<PluginManifest, PluginError> {
     let manifest_path = plugin_manifest_path(root)?;
     load_manifest_from_path(root, &manifest_path)
 }
 
+/// Load and validate a manifest from an explicit file path.
 pub(crate) fn load_manifest_from_path(
     root: &Path,
     manifest_path: &Path,
@@ -82,6 +86,7 @@ pub(crate) fn load_manifest_from_path(
     build_plugin_manifest(root, raw_manifest)
 }
 
+/// Resolve the manifest file path within a plugin root.
 pub(crate) fn plugin_manifest_path(root: &Path) -> Result<PathBuf, PluginError> {
     let direct_path = root.join(MANIFEST_FILE_NAME);
     if direct_path.exists() {
@@ -107,6 +112,7 @@ pub(crate) fn plugin_manifest_path(root: &Path) -> Result<PathBuf, PluginError> 
     )))
 }
 
+/// Build and validate a `PluginManifest` from raw JSON.
 pub(crate) fn build_plugin_manifest(
     root: &Path,
     raw: RawPluginManifest,
@@ -158,6 +164,7 @@ pub(crate) fn build_plugin_manifest(
     })
 }
 
+/// Validate that a required manifest string field is non-empty.
 pub(crate) fn validate_required_manifest_field(
     field: &'static str,
     value: &str,
@@ -168,6 +175,7 @@ pub(crate) fn validate_required_manifest_field(
     }
 }
 
+/// Build permission entries from raw manifest data.
 pub(crate) fn build_manifest_permissions(
     permissions: &[String],
     errors: &mut Vec<PluginManifestValidationError>,
@@ -202,6 +210,7 @@ pub(crate) fn build_manifest_permissions(
     validated
 }
 
+/// Build tool definitions from raw manifest data.
 pub(crate) fn build_manifest_tools(
     root: &Path,
     tools: Vec<RawPluginToolManifest>,
@@ -270,6 +279,7 @@ pub(crate) fn build_manifest_tools(
     validated
 }
 
+/// Build command definitions from raw manifest data.
 pub(crate) fn build_manifest_commands(
     root: &Path,
     commands: Vec<PluginCommandManifest>,
@@ -317,6 +327,7 @@ pub(crate) fn build_manifest_commands(
     validated
 }
 
+/// Validate a list of command entry strings.
 pub(crate) fn validate_command_entries<'a>(
     root: &Path,
     entries: impl Iterator<Item = &'a String>,
@@ -328,6 +339,7 @@ pub(crate) fn validate_command_entries<'a>(
     }
 }
 
+/// Validate a single command entry string.
 pub(crate) fn validate_command_entry(
     root: &Path,
     entry: &str,
@@ -358,6 +370,7 @@ pub(crate) fn validate_command_entry(
     }
 }
 
+/// Resolve hook paths relative to the plugin root.
 pub(crate) fn resolve_hooks(root: &Path, hooks: &PluginHooks) -> PluginHooks {
     PluginHooks {
         pre_tool_use: hooks
@@ -378,6 +391,7 @@ pub(crate) fn resolve_hooks(root: &Path, hooks: &PluginHooks) -> PluginHooks {
     }
 }
 
+/// Resolve lifecycle script paths relative to the plugin root.
 pub(crate) fn resolve_lifecycle(root: &Path, lifecycle: &PluginLifecycle) -> PluginLifecycle {
     PluginLifecycle {
         init: lifecycle
@@ -393,6 +407,7 @@ pub(crate) fn resolve_lifecycle(root: &Path, lifecycle: &PluginLifecycle) -> Plu
     }
 }
 
+/// Build plugin tools from manifest data and plugin metadata.
 pub(crate) fn resolve_tools(
     root: &Path,
     plugin_id: &str,
@@ -419,6 +434,7 @@ pub(crate) fn resolve_tools(
         .collect()
 }
 
+/// Validate that all hook script paths exist.
 pub(crate) fn validate_hook_paths(
     root: Option<&Path>,
     hooks: &PluginHooks,
@@ -437,6 +453,7 @@ pub(crate) fn validate_hook_paths(
     Ok(())
 }
 
+/// Validate that all lifecycle script paths exist.
 pub(crate) fn validate_lifecycle_paths(
     root: Option<&Path>,
     lifecycle: &PluginLifecycle,
@@ -450,6 +467,7 @@ pub(crate) fn validate_lifecycle_paths(
     Ok(())
 }
 
+/// Validate that all tool script paths exist.
 pub(crate) fn validate_tool_paths(
     root: Option<&Path>,
     tools: &[PluginTool],
@@ -463,6 +481,7 @@ pub(crate) fn validate_tool_paths(
     Ok(())
 }
 
+/// Validate that a command script path exists.
 pub(crate) fn validate_command_path(
     root: &Path,
     entry: &str,
@@ -491,6 +510,7 @@ pub(crate) fn validate_command_path(
     Ok(())
 }
 
+/// Resolve a hook entry path relative to the plugin root.
 pub(crate) fn resolve_hook_entry(root: &Path, entry: &str) -> String {
     if is_literal_command(entry) {
         entry.to_string()
@@ -499,10 +519,12 @@ pub(crate) fn resolve_hook_entry(root: &Path, entry: &str) -> String {
     }
 }
 
+/// Return `true` if the entry is a literal (non-path) command.
 pub(crate) fn is_literal_command(entry: &str) -> bool {
     !entry.starts_with("./") && !entry.starts_with("../") && !Path::new(entry).is_absolute()
 }
 
+/// Execute lifecycle commands (init or shutdown) for a plugin.
 pub(crate) fn run_lifecycle_commands(
     metadata: &PluginMetadata,
     lifecycle: &PluginLifecycle,
@@ -557,6 +579,7 @@ pub(crate) fn run_lifecycle_commands(
     Ok(())
 }
 
+/// Resolve a local path source for plugin installation.
 pub(crate) fn resolve_local_source(source: &str) -> Result<PathBuf, PluginError> {
     let path = PathBuf::from(source);
     if path.exists() {
@@ -568,6 +591,7 @@ pub(crate) fn resolve_local_source(source: &str) -> Result<PathBuf, PluginError>
     }
 }
 
+/// Parse an install source string into a `PluginInstallSource`.
 pub(crate) fn parse_install_source(source: &str) -> Result<PluginInstallSource, PluginError> {
     if source.starts_with("http://")
         || source.starts_with("https://")
@@ -586,6 +610,7 @@ pub(crate) fn parse_install_source(source: &str) -> Result<PluginInstallSource, 
     }
 }
 
+/// Copy or clone a plugin source into the install directory.
 pub(crate) fn materialize_source(
     source: &PluginInstallSource,
     temp_root: &Path,
@@ -613,6 +638,7 @@ pub(crate) fn materialize_source(
     }
 }
 
+/// Discover plugin subdirectories within a root directory.
 pub(crate) fn discover_plugin_dirs(root: &Path) -> Result<Vec<PathBuf>, PluginError> {
     match fs::read_dir(root) {
         Ok(entries) => {
@@ -631,10 +657,12 @@ pub(crate) fn discover_plugin_dirs(root: &Path) -> Result<Vec<PathBuf>, PluginEr
     }
 }
 
+/// Build the scoped plugin ID string.
 pub(crate) fn plugin_id(name: &str, marketplace: &str) -> String {
     format!("{name}@{marketplace}")
 }
 
+/// Sanitize a plugin ID to contain only safe characters.
 pub(crate) fn sanitize_plugin_id(plugin_id: &str) -> String {
     plugin_id
         .chars()
@@ -645,6 +673,7 @@ pub(crate) fn sanitize_plugin_id(plugin_id: &str) -> String {
         .collect()
 }
 
+/// Return a human-readable description of a `PluginInstallSource`.
 pub(crate) fn describe_install_source(source: &PluginInstallSource) -> String {
     match source {
         PluginInstallSource::LocalPath { path } => path.display().to_string(),
@@ -652,6 +681,7 @@ pub(crate) fn describe_install_source(source: &PluginInstallSource) -> String {
     }
 }
 
+/// Return the current Unix timestamp in milliseconds.
 pub(crate) fn unix_time_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -659,6 +689,7 @@ pub(crate) fn unix_time_ms() -> u128 {
         .as_millis()
 }
 
+/// Recursively copy a directory tree.
 pub(crate) fn copy_dir_all(source: &Path, destination: &Path) -> Result<(), PluginError> {
     fs::create_dir_all(destination)?;
     for entry in fs::read_dir(source)? {
@@ -673,6 +704,7 @@ pub(crate) fn copy_dir_all(source: &Path, destination: &Path) -> Result<(), Plug
     Ok(())
 }
 
+/// Update the plugin settings JSON file.
 pub(crate) fn update_settings_json(
     path: &Path,
     mut update: impl FnMut(&mut Map<String, Value>),
@@ -698,6 +730,7 @@ pub(crate) fn update_settings_json(
     Ok(())
 }
 
+/// Ensure a JSON value is a mutable object, inserting one if needed.
 pub(crate) fn ensure_object<'a>(
     root: &'a mut Map<String, Value>,
     key: &str,

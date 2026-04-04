@@ -1,3 +1,4 @@
+//! CLI argument parsing, model aliases, and completion candidates.
 use std::collections::BTreeSet;
 use std::env;
 use std::path::PathBuf;
@@ -11,7 +12,9 @@ use crate::runtime_build::build_plugin_manager;
 use crate::session_management::LATEST_SESSION_REFERENCE;
 use crate::util::{ranked_suggestions, render_suggestion_line, suggest_closest_term};
 
+/// Default model used when none is specified.
 pub(crate) const DEFAULT_MODEL: &str = "claude-opus-4-6";
+/// Return the maximum output tokens for the given model.
 pub(crate) fn max_tokens_for_model(model: &str) -> u32 {
     if model.contains("opus") {
         32_000
@@ -19,10 +22,15 @@ pub(crate) fn max_tokens_for_model(model: &str) -> u32 {
         64_000
     }
 }
+/// Default date string injected into the system prompt.
 pub(crate) const DEFAULT_DATE: &str = "2026-03-31";
+/// Package version from `CARGO_PKG_VERSION`.
 pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Optional target triple from `TARGET` env at build time.
 pub(crate) const BUILD_TARGET: Option<&str> = option_env!("TARGET");
+/// Optional git SHA from `GIT_SHA` env at build time.
 pub(crate) const GIT_SHA: Option<&str> = option_env!("GIT_SHA");
+/// Canonical CLI option names used for typo suggestions.
 pub(crate) const CLI_OPTION_SUGGESTIONS: &[&str] = &[
     "--help",
     "-h",
@@ -39,9 +47,11 @@ pub(crate) const CLI_OPTION_SUGGESTIONS: &[&str] = &[
     "-p",
 ];
 
+/// Set of allowed tool names for a restricted session.
 pub(crate) type AllowedToolSet = BTreeSet<String>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Top-level CLI dispatch action parsed from command-line arguments.
 pub(crate) enum CliAction {
     DumpManifests,
     BootstrapPlan,
@@ -85,12 +95,14 @@ pub(crate) enum CliAction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Output format for non-interactive prompt mode.
 pub(crate) enum CliOutputFormat {
     Text,
     Json,
 }
 
 impl CliOutputFormat {
+    /// Parse an output-format label (`text` or `json`).
     pub(crate) fn parse(value: &str) -> Result<Self, String> {
         match value {
             "text" => Ok(Self::Text),
@@ -103,6 +115,7 @@ impl CliOutputFormat {
 }
 
 #[allow(clippy::too_many_lines)]
+/// Parse CLI arguments into a `CliAction`.
 pub(crate) fn parse_args(args: &[String]) -> Result<CliAction, String> {
     let mut model = DEFAULT_MODEL.to_string();
     let mut output_format = CliOutputFormat::Text;
@@ -351,6 +364,7 @@ fn parse_direct_slash_cli_action(rest: &[String]) -> Result<CliAction, String> {
     }
 }
 
+/// Format an 'unknown option' error with typo suggestions.
 pub(crate) fn format_unknown_option(option: &str) -> String {
     let mut message = format!("unknown option: {option}");
     if let Some(suggestion) = suggest_closest_term(option, CLI_OPTION_SUGGESTIONS) {
@@ -362,6 +376,7 @@ pub(crate) fn format_unknown_option(option: &str) -> String {
     message
 }
 
+/// Format an error for a slash command used directly (not in REPL).
 pub(crate) fn format_unknown_direct_slash_command(name: &str) -> String {
     let mut message = format!("unknown slash command outside the REPL: /{name}");
     if let Some(suggestions) = render_suggestion_line("Did you mean", &suggest_slash_commands(name))
@@ -373,6 +388,7 @@ pub(crate) fn format_unknown_direct_slash_command(name: &str) -> String {
     message
 }
 
+/// Format a 'unknown slash command' message with suggestions.
 pub(crate) fn format_unknown_slash_command(name: &str) -> String {
     let mut message = format!("Unknown slash command: /{name}");
     if let Some(suggestions) = render_suggestion_line("Did you mean", &suggest_slash_commands(name))
@@ -384,6 +400,7 @@ pub(crate) fn format_unknown_slash_command(name: &str) -> String {
     message
 }
 
+/// Return slash command name suggestions sorted by edit-distance.
 pub(crate) fn suggest_slash_commands(input: &str) -> Vec<String> {
     let mut candidates = slash_command_specs()
         .iter()
@@ -403,6 +420,7 @@ pub(crate) fn suggest_slash_commands(input: &str) -> Vec<String> {
         .collect()
 }
 
+/// Resolve a short model alias (e.g. `opus`) to its canonical name.
 pub(crate) fn resolve_model_alias(model: &str) -> &str {
     match model {
         "opus" => "claude-opus-4-6",
@@ -412,10 +430,12 @@ pub(crate) fn resolve_model_alias(model: &str) -> &str {
     }
 }
 
+/// Validate and normalize `--allowedTools` values into a `BTreeSet`.
 pub(crate) fn normalize_allowed_tools(values: &[String]) -> Result<Option<AllowedToolSet>, String> {
     current_tool_registry()?.normalize_allowed_tools(values)
 }
 
+/// Build the current tool registry (builtin + plugin tools).
 pub(crate) fn current_tool_registry() -> Result<GlobalToolRegistry, String> {
     let cwd = env::current_dir().map_err(|error| error.to_string())?;
     let loader = ConfigLoader::default_for(&cwd);
@@ -427,6 +447,7 @@ pub(crate) fn current_tool_registry() -> Result<GlobalToolRegistry, String> {
     GlobalToolRegistry::with_plugin_tools(plugin_tools)
 }
 
+/// Parse a `--permission-mode` argument value into a `PermissionMode`.
 pub(crate) fn parse_permission_mode_arg(value: &str) -> Result<PermissionMode, String> {
     normalize_permission_mode(value)
         .ok_or_else(|| {
@@ -437,6 +458,7 @@ pub(crate) fn parse_permission_mode_arg(value: &str) -> Result<PermissionMode, S
         .map(permission_mode_from_label)
 }
 
+/// Convert a permission mode label string into a `PermissionMode`.
 pub(crate) fn permission_mode_from_label(mode: &str) -> PermissionMode {
     match mode {
         "read-only" => PermissionMode::ReadOnly,
@@ -446,6 +468,7 @@ pub(crate) fn permission_mode_from_label(mode: &str) -> PermissionMode {
     }
 }
 
+/// Return the default permission mode for new sessions.
 pub(crate) fn default_permission_mode() -> PermissionMode {
     env::var("RUSTY_CLAUDE_PERMISSION_MODE")
         .ok()
@@ -482,6 +505,7 @@ fn parse_system_prompt_args(args: &[String]) -> Result<CliAction, String> {
     Ok(CliAction::PrintSystemPrompt { cwd, date })
 }
 
+/// Parse `--resume` arguments into a `ResumeSession` action.
 pub(crate) fn parse_resume_args(args: &[String]) -> Result<CliAction, String> {
     let (session_path, command_tokens): (PathBuf, &[String]) = match args.first() {
         None => (PathBuf::from(LATEST_SESSION_REFERENCE), &[]),
@@ -549,6 +573,7 @@ fn looks_like_slash_command_token(token: &str) -> bool {
         .any(|spec| spec.name == name || spec.aliases.contains(&name))
 }
 
+/// Filter tool specs from a registry to the allowed set.
 pub(crate) fn filter_tool_specs(
     tool_registry: &GlobalToolRegistry,
     allowed_tools: Option<&AllowedToolSet>,
@@ -556,6 +581,7 @@ pub(crate) fn filter_tool_specs(
     tool_registry.definitions(allowed_tools)
 }
 
+/// Build tab-completion candidates including session IDs.
 pub(crate) fn slash_command_completion_candidates_with_sessions(
     model: &str,
     active_session_id: Option<&str>,

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
+/// Input for the `read_file` tool.
 pub(crate) struct ReadFileInput {
     pub path: String,
     pub offset: Option<usize>,
@@ -13,12 +14,14 @@ pub(crate) struct ReadFileInput {
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `write_file` tool.
 pub(crate) struct WriteFileInput {
     pub path: String,
     pub content: String,
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `edit_file` tool.
 pub(crate) struct EditFileInput {
     pub path: String,
     pub old_string: String,
@@ -27,18 +30,21 @@ pub(crate) struct EditFileInput {
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `glob_search` tool.
 pub(crate) struct GlobSearchInputValue {
     pub pattern: String,
     pub path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `web_fetch` tool.
 pub(crate) struct WebFetchInput {
     pub url: String,
     pub prompt: String,
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `web_search` tool.
 pub(crate) struct WebSearchInput {
     pub query: String,
     pub allowed_domains: Option<Vec<String>>,
@@ -46,11 +52,13 @@ pub(crate) struct WebSearchInput {
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `todo_write` tool.
 pub(crate) struct TodoWriteInput {
     pub todos: Vec<TodoItem>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
+/// A single to-do item.
 pub(crate) struct TodoItem {
     pub content: String,
     #[serde(rename = "activeForm")]
@@ -60,6 +68,7 @@ pub(crate) struct TodoItem {
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// Status of a to-do item.
 pub(crate) enum TodoStatus {
     Pending,
     InProgress,
@@ -67,12 +76,14 @@ pub(crate) enum TodoStatus {
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `skill` tool.
 pub(crate) struct SkillInput {
     pub skill: String,
     pub args: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `agent` tool.
 pub(crate) struct AgentInput {
     pub description: String,
     pub prompt: String,
@@ -82,12 +93,14 @@ pub(crate) struct AgentInput {
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `tool_search` tool.
 pub(crate) struct ToolSearchInput {
     pub query: String,
     pub max_results: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `notebook_edit` tool.
 pub(crate) struct NotebookEditInput {
     pub notebook_path: String,
     pub cell_id: Option<String>,
@@ -98,6 +111,7 @@ pub(crate) struct NotebookEditInput {
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+/// Type of a Jupyter notebook cell.
 pub(crate) enum NotebookCellType {
     Code,
     Markdown,
@@ -105,6 +119,7 @@ pub(crate) enum NotebookCellType {
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+/// Mode for a notebook cell edit operation.
 pub(crate) enum NotebookEditMode {
     Replace,
     Insert,
@@ -112,11 +127,13 @@ pub(crate) enum NotebookEditMode {
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `sleep` tool.
 pub(crate) struct SleepInput {
     pub duration_ms: u64,
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `brief` tool.
 pub(crate) struct BriefInput {
     pub message: String,
     pub attachments: Option<Vec<String>>,
@@ -125,12 +142,14 @@ pub(crate) struct BriefInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// Status code for a brief message.
 pub(crate) enum BriefStatus {
     Normal,
     Proactive,
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `config` tool.
 pub(crate) struct ConfigInput {
     pub setting: String,
     pub value: Option<ConfigValue>,
@@ -138,14 +157,17 @@ pub(crate) struct ConfigInput {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
+/// Input for the `enter_plan_mode` tool (no fields).
 pub(crate) struct EnterPlanModeInput {}
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
+/// Input for the `exit_plan_mode` tool (no fields).
 pub(crate) struct ExitPlanModeInput {}
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
+/// A typed configuration value.
 pub(crate) enum ConfigValue {
     String(String),
     Bool(bool),
@@ -154,9 +176,11 @@ pub(crate) enum ConfigValue {
 
 #[derive(Debug, Deserialize)]
 #[serde(transparent)]
+/// Input for the `structured_output` tool.
 pub(crate) struct StructuredOutputInput(pub BTreeMap<String, Value>);
 
 #[derive(Debug, Deserialize)]
+/// Input for the `repl` tool.
 pub(crate) struct ReplInput {
     pub code: String,
     pub language: String,
@@ -164,6 +188,7 @@ pub(crate) struct ReplInput {
 }
 
 #[derive(Debug, Deserialize)]
+/// Input for the `powershell` tool.
 pub(crate) struct PowerShellInput {
     pub command: String,
     pub timeout: Option<u64>,
@@ -172,6 +197,7 @@ pub(crate) struct PowerShellInput {
 }
 
 #[derive(Debug, Serialize)]
+/// Output of the `web_fetch` tool.
 pub(crate) struct WebFetchOutput {
     pub bytes: usize,
     pub code: u16,
@@ -184,6 +210,7 @@ pub(crate) struct WebFetchOutput {
 }
 
 #[derive(Debug, Serialize)]
+/// Output of the `web_search` tool.
 pub(crate) struct WebSearchOutput {
     pub query: String,
     pub results: Vec<WebSearchResultItem>,
@@ -192,6 +219,7 @@ pub(crate) struct WebSearchOutput {
 }
 
 #[derive(Debug, Serialize)]
+/// Output of the `todo_write` tool.
 pub(crate) struct TodoWriteOutput {
     #[serde(rename = "oldTodos")]
     pub old_todos: Vec<TodoItem>,
@@ -202,6 +230,7 @@ pub(crate) struct TodoWriteOutput {
 }
 
 #[derive(Debug, Serialize)]
+/// Output of the `skill` tool.
 pub(crate) struct SkillOutput {
     pub skill: String,
     pub path: String,
@@ -211,6 +240,7 @@ pub(crate) struct SkillOutput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Output of the `agent` tool.
 pub(crate) struct AgentOutput {
     #[serde(rename = "agentId")]
     pub agent_id: String,
@@ -235,6 +265,7 @@ pub(crate) struct AgentOutput {
 }
 
 #[derive(Debug, Serialize)]
+/// Output of the `tool_search` tool.
 pub(crate) struct ToolSearchOutput {
     pub matches: Vec<String>,
     pub query: String,
@@ -246,6 +277,7 @@ pub(crate) struct ToolSearchOutput {
 }
 
 #[derive(Debug, Serialize)]
+/// Output of the `notebook_edit` tool.
 pub(crate) struct NotebookEditOutput {
     pub new_source: String,
     pub cell_id: Option<String>,
@@ -259,12 +291,14 @@ pub(crate) struct NotebookEditOutput {
 }
 
 #[derive(Debug, Serialize)]
+/// Output of the `sleep` tool.
 pub(crate) struct SleepOutput {
     pub duration_ms: u64,
     pub message: String,
 }
 
 #[derive(Debug, Serialize)]
+/// Output of the `brief` tool.
 pub(crate) struct BriefOutput {
     pub message: String,
     pub attachments: Option<Vec<ResolvedAttachment>>,
@@ -273,6 +307,7 @@ pub(crate) struct BriefOutput {
 }
 
 #[derive(Debug, Serialize)]
+/// A resolved file attachment with path and content.
 pub(crate) struct ResolvedAttachment {
     pub path: String,
     pub size: u64,
@@ -281,6 +316,7 @@ pub(crate) struct ResolvedAttachment {
 }
 
 #[derive(Debug, Serialize)]
+/// Output of the `config` tool.
 pub(crate) struct ConfigOutput {
     pub success: bool,
     pub operation: Option<String>,
@@ -294,6 +330,7 @@ pub(crate) struct ConfigOutput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Persisted state for plan mode.
 pub(crate) struct PlanModeState {
     #[serde(rename = "hadLocalOverride")]
     pub had_local_override: bool,
@@ -303,6 +340,7 @@ pub(crate) struct PlanModeState {
 
 #[derive(Debug, Serialize)]
 #[allow(clippy::struct_excessive_bools)] // Required fields for JSON API contract
+/// Output of a plan-mode transition tool.
 pub(crate) struct PlanModeOutput {
     pub success: bool,
     pub operation: String,
@@ -321,12 +359,14 @@ pub(crate) struct PlanModeOutput {
 }
 
 #[derive(Debug, Serialize)]
+/// Result of a `structured_output` call.
 pub(crate) struct StructuredOutputResult {
     pub data: String,
     pub structured_output: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Serialize)]
+/// Output of the `repl` tool.
 pub(crate) struct ReplOutput {
     pub language: String,
     pub stdout: String,
@@ -339,6 +379,7 @@ pub(crate) struct ReplOutput {
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
+/// A single web search result item.
 pub(crate) enum WebSearchResultItem {
     SearchResult {
         tool_use_id: String,
@@ -348,18 +389,21 @@ pub(crate) enum WebSearchResultItem {
 }
 
 #[derive(Debug, Serialize)]
+/// An extracted search result hit.
 pub(crate) struct SearchHit {
     pub title: String,
     pub url: String,
 }
 
 #[derive(Clone, Copy)]
+/// Scope at which a config setting is stored.
 pub(crate) enum ConfigScope {
     Global,
     Settings,
 }
 
 #[derive(Clone, Copy)]
+/// Specification for a supported config setting.
 pub(crate) struct ConfigSettingSpec {
     pub scope: ConfigScope,
     pub kind: ConfigKind,
@@ -368,6 +412,7 @@ pub(crate) struct ConfigSettingSpec {
 }
 
 #[derive(Clone, Copy)]
+/// Type of a config setting value.
 pub(crate) enum ConfigKind {
     Boolean,
     String,

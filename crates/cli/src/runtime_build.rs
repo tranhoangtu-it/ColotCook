@@ -1,3 +1,4 @@
+//! Runtime construction, plugin wiring, tool executors, and hook monitoring.
 use std::env;
 use std::io::{self, Write};
 use std::ops::{Deref, DerefMut};
@@ -19,12 +20,14 @@ use crate::render::TerminalRenderer;
 use crate::streaming::{InternalPromptProgressReporter, MultiProviderRuntimeClient};
 use crate::tool_display::format_tool_result;
 
+/// Snapshot of plugin state used when constructing the runtime.
 pub(crate) struct RuntimePluginState {
     pub(crate) feature_config: runtime::RuntimeFeatureConfig,
     pub(crate) tool_registry: GlobalToolRegistry,
     pub(crate) plugin_registry: PluginRegistry,
 }
 
+/// Fully-constructed conversation runtime with plugin registry.
 pub(crate) struct BuiltRuntime {
     runtime: Option<ConversationRuntime<MultiProviderRuntimeClient, CliToolExecutor>>,
     pub(crate) plugin_registry: PluginRegistry,
@@ -32,6 +35,7 @@ pub(crate) struct BuiltRuntime {
 }
 
 impl BuiltRuntime {
+    /// Wrap a conversation runtime with its plugin registry.
     pub(crate) fn new(
         runtime: ConversationRuntime<MultiProviderRuntimeClient, CliToolExecutor>,
         plugin_registry: PluginRegistry,
@@ -43,6 +47,7 @@ impl BuiltRuntime {
         }
     }
 
+    /// Attach a hook-abort signal so the runtime can be interrupted.
     pub(crate) fn with_hook_abort_signal(
         mut self,
         hook_abort_signal: runtime::HookAbortSignal,
@@ -55,6 +60,7 @@ impl BuiltRuntime {
         self
     }
 
+    /// Shut down all active plugins, idempotently.
     pub(crate) fn shutdown_plugins(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.plugins_active {
             self.plugin_registry.shutdown()?;
@@ -88,12 +94,14 @@ impl Drop for BuiltRuntime {
     }
 }
 
+/// Background thread that watches for hook-abort signals and triggers process exit.
 pub(crate) struct HookAbortMonitor {
     stop_tx: Option<Sender<()>>,
     join_handle: Option<JoinHandle<()>>,
 }
 
 impl HookAbortMonitor {
+    /// Spawn a monitor that calls `std::process::exit` on abort.
     pub(crate) fn spawn(abort_signal: runtime::HookAbortSignal) -> Self {
         Self::spawn_with_waiter(abort_signal, move |stop_rx, abort_signal| {
             let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
@@ -120,6 +128,7 @@ impl HookAbortMonitor {
         })
     }
 
+    /// Spawn a monitor with a custom waiter function (useful in tests).
     pub(crate) fn spawn_with_waiter<F>(
         abort_signal: runtime::HookAbortSignal,
         wait_for_interrupt: F,
@@ -136,6 +145,7 @@ impl HookAbortMonitor {
         }
     }
 
+    /// Stop the monitor thread without triggering an abort.
     pub(crate) fn stop(mut self) {
         if let Some(stop_tx) = self.stop_tx.take() {
             let _ = stop_tx.send(());
@@ -146,6 +156,7 @@ impl HookAbortMonitor {
     }
 }
 
+/// Load and render the system prompt sections for this session.
 pub(crate) fn build_system_prompt() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     Ok(load_system_prompt(
         env::current_dir()?,
@@ -156,6 +167,7 @@ pub(crate) fn build_system_prompt() -> Result<Vec<String>, Box<dyn std::error::E
 }
 
 #[allow(dead_code)] // Entry point for plugin state initialization, called from session setup paths
+/// Build the plugin state using the default config loader.
 pub(crate) fn build_runtime_plugin_state() -> Result<RuntimePluginState, Box<dyn std::error::Error>>
 {
     let cwd = env::current_dir()?;
@@ -164,6 +176,7 @@ pub(crate) fn build_runtime_plugin_state() -> Result<RuntimePluginState, Box<dyn
     build_runtime_plugin_state_with_loader(&cwd, &loader, &runtime_config)
 }
 
+/// Build the plugin state using the default config loader.
 pub(crate) fn build_runtime_plugin_state_with_loader(
     cwd: &Path,
     loader: &ConfigLoader,
@@ -185,6 +198,7 @@ pub(crate) fn build_runtime_plugin_state_with_loader(
     })
 }
 
+/// Build a `PluginManager` from the loaded runtime configuration.
 pub(crate) fn build_plugin_manager(
     cwd: &Path,
     loader: &ConfigLoader,
@@ -210,6 +224,7 @@ pub(crate) fn build_plugin_manager(
     PluginManager::new(plugin_config)
 }
 
+/// Resolve a plugin path relative to `cwd` or `config_home`.
 pub(crate) fn resolve_plugin_path(cwd: &Path, config_home: &Path, value: &str) -> PathBuf {
     let path = PathBuf::from(value);
     if path.is_absolute() {
@@ -221,6 +236,7 @@ pub(crate) fn resolve_plugin_path(cwd: &Path, config_home: &Path, value: &str) -
     }
 }
 
+/// Convert plugin hooks into runtime hook configuration entries.
 pub(crate) fn runtime_hook_config_from_plugin_hooks(
     hooks: PluginHooks,
 ) -> runtime::RuntimeHookConfig {
@@ -233,6 +249,7 @@ pub(crate) fn runtime_hook_config_from_plugin_hooks(
 
 #[allow(clippy::needless_pass_by_value)]
 #[allow(clippy::too_many_arguments)]
+/// Build a full conversation runtime with the given parameters.
 pub(crate) fn build_runtime(
     session: Session,
     session_id: &str,
@@ -283,6 +300,7 @@ pub(crate) fn build_runtime(
 
 #[allow(clippy::needless_pass_by_value)]
 #[allow(clippy::too_many_arguments)]
+/// Build a runtime from pre-built plugin state.
 pub(crate) fn build_runtime_with_plugin_state(
     session: Session,
     session_id: &str,
@@ -333,6 +351,7 @@ pub(crate) fn build_runtime_with_plugin_state(
     Ok(BuiltRuntime::new(runtime, plugin_registry))
 }
 
+/// Terminal-printing hook progress reporter.
 pub(crate) struct CliHookProgressReporter;
 
 impl runtime::HookProgressReporter for CliHookProgressReporter {
@@ -366,11 +385,13 @@ impl runtime::HookProgressReporter for CliHookProgressReporter {
     }
 }
 
+/// Interactive terminal prompter for permission decisions.
 pub(crate) struct CliPermissionPrompter {
     current_mode: PermissionMode,
 }
 
 impl CliPermissionPrompter {
+    /// Wrap a conversation runtime with its plugin registry.
     pub(crate) fn new(current_mode: PermissionMode) -> Self {
         Self { current_mode }
     }
@@ -415,6 +436,7 @@ impl runtime::PermissionPrompter for CliPermissionPrompter {
     }
 }
 
+/// Tool executor that runs tools and streams output to the terminal.
 pub(crate) struct CliToolExecutor {
     renderer: TerminalRenderer,
     emit_output: bool,
@@ -427,6 +449,7 @@ pub(crate) struct CliToolExecutor {
 }
 
 impl CliToolExecutor {
+    /// Wrap a conversation runtime with its plugin registry.
     pub(crate) fn new(
         allowed_tools: Option<AllowedToolSet>,
         emit_output: bool,
@@ -543,6 +566,7 @@ impl CliToolExecutor {
     }
 }
 
+/// Build a `PermissionPolicy` from the active permission mode.
 pub(crate) fn permission_policy(
     mode: PermissionMode,
     feature_config: &runtime::RuntimeFeatureConfig,

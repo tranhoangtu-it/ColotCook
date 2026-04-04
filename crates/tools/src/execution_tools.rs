@@ -16,6 +16,7 @@ use crate::types::{
 };
 
 #[allow(clippy::too_many_lines)]
+/// Edit a Jupyter notebook cell according to the given input.
 pub(crate) fn execute_notebook_edit(
     input: NotebookEditInput,
 ) -> Result<NotebookEditOutput, String> {
@@ -140,6 +141,7 @@ pub(crate) fn execute_notebook_edit(
     })
 }
 
+/// Validate that notebook source is non-empty.
 pub(crate) fn require_notebook_source(
     source: Option<String>,
     edit_mode: NotebookEditMode,
@@ -151,6 +153,7 @@ pub(crate) fn require_notebook_source(
     }
 }
 
+/// Build a JSON notebook cell object.
 pub(crate) fn build_notebook_cell(
     cell_id: &str,
     cell_type: NotebookCellType,
@@ -177,6 +180,7 @@ pub(crate) fn build_notebook_cell(
     cell
 }
 
+/// Detect the cell type of a JSON notebook cell.
 pub(crate) fn cell_kind(cell: &serde_json::Value) -> Option<NotebookCellType> {
     cell.get("cell_type")
         .and_then(serde_json::Value::as_str)
@@ -189,9 +193,11 @@ pub(crate) fn cell_kind(cell: &serde_json::Value) -> Option<NotebookCellType> {
         })
 }
 
+/// Maximum allowed sleep duration in milliseconds.
 pub(crate) const MAX_SLEEP_DURATION_MS: u64 = 300_000;
 
 #[allow(clippy::needless_pass_by_value)]
+/// Sleep for the requested duration.
 pub(crate) fn execute_sleep(input: SleepInput) -> Result<SleepOutput, String> {
     if input.duration_ms > MAX_SLEEP_DURATION_MS {
         return Err(format!(
@@ -206,6 +212,7 @@ pub(crate) fn execute_sleep(input: SleepInput) -> Result<SleepOutput, String> {
     })
 }
 
+/// Emit a structured brief message to the user.
 pub(crate) fn execute_brief(input: BriefInput) -> Result<BriefOutput, String> {
     if input.message.trim().is_empty() {
         return Err(String::from("message must not be empty"));
@@ -233,6 +240,7 @@ pub(crate) fn execute_brief(input: BriefInput) -> Result<BriefOutput, String> {
     })
 }
 
+/// Resolve an attachment path to its content.
 pub(crate) fn resolve_attachment(path: &str) -> Result<ResolvedAttachment, String> {
     let resolved = std::fs::canonicalize(path).map_err(|error| error.to_string())?;
     let metadata = std::fs::metadata(&resolved).map_err(|error| error.to_string())?;
@@ -243,6 +251,7 @@ pub(crate) fn resolve_attachment(path: &str) -> Result<ResolvedAttachment, Strin
     })
 }
 
+/// Return `true` if the path has an image extension.
 pub(crate) fn is_image_path(path: &Path) -> bool {
     matches!(
         path.extension()
@@ -253,6 +262,7 @@ pub(crate) fn is_image_path(path: &Path) -> bool {
     )
 }
 
+/// Execute a REPL command in the appropriate language runtime.
 pub(crate) fn execute_repl(input: ReplInput) -> Result<ReplOutput, String> {
     if input.code.trim().is_empty() {
         return Err(String::from("code must not be empty"));
@@ -307,11 +317,13 @@ pub(crate) fn execute_repl(input: ReplInput) -> Result<ReplOutput, String> {
     })
 }
 
+/// Descriptor for a language REPL runtime.
 pub(crate) struct ReplRuntime {
     program: &'static str,
     args: &'static [&'static str],
 }
 
+/// Resolve the REPL runtime for a given language.
 pub(crate) fn resolve_repl_runtime(language: &str) -> Result<ReplRuntime, String> {
     match language.trim().to_ascii_lowercase().as_str() {
         "python" | "py" => Ok(ReplRuntime {
@@ -333,6 +345,7 @@ pub(crate) fn resolve_repl_runtime(language: &str) -> Result<ReplRuntime, String
     }
 }
 
+/// Return the first available command from `commands`.
 pub(crate) fn detect_first_command(commands: &[&'static str]) -> Option<&'static str> {
     commands
         .iter()
@@ -340,6 +353,7 @@ pub(crate) fn detect_first_command(commands: &[&'static str]) -> Option<&'static
         .find(|command| command_exists(command))
 }
 
+/// Return the current UTC time as an ISO 8601 string.
 pub(crate) fn iso8601_timestamp() -> String {
     if let Ok(output) = Command::new("date")
         .args(["-u", "+%Y-%m-%dT%H:%M:%SZ"])
@@ -353,6 +367,7 @@ pub(crate) fn iso8601_timestamp() -> String {
 }
 
 #[allow(clippy::needless_pass_by_value)]
+/// Execute a PowerShell script block.
 pub(crate) fn execute_powershell(
     input: PowerShellInput,
 ) -> std::io::Result<runtime::BashCommandOutput> {
@@ -366,6 +381,7 @@ pub(crate) fn execute_powershell(
     )
 }
 
+/// Detect the available PowerShell executable.
 pub(crate) fn detect_powershell_shell() -> std::io::Result<&'static str> {
     if command_exists("pwsh") {
         Ok("pwsh")
@@ -379,6 +395,7 @@ pub(crate) fn detect_powershell_shell() -> std::io::Result<&'static str> {
     }
 }
 
+/// Check whether a command exists on `PATH`.
 pub(crate) fn command_exists(command: &str) -> bool {
     std::process::Command::new("sh")
         .arg("-lc")
@@ -389,6 +406,7 @@ pub(crate) fn command_exists(command: &str) -> bool {
 }
 
 #[allow(clippy::too_many_lines)]
+/// Execute a shell (bash/sh) command and capture output.
 pub(crate) fn execute_shell_command(
     shell: &str,
     command: &str,
@@ -520,6 +538,7 @@ Command exceeded timeout of {timeout_ms} ms",
     })
 }
 
+/// Find the cell index for the given cell ID.
 pub(crate) fn resolve_cell_index(
     cells: &[serde_json::Value],
     cell_id: Option<&str>,
@@ -543,6 +562,7 @@ pub(crate) fn resolve_cell_index(
     }
 }
 
+/// Convert a source string into a JSON array of lines.
 pub(crate) fn source_lines(source: &str) -> Vec<serde_json::Value> {
     if source.is_empty() {
         return vec![serde_json::Value::String(String::new())];
@@ -553,6 +573,7 @@ pub(crate) fn source_lines(source: &str) -> Vec<serde_json::Value> {
         .collect()
 }
 
+/// Return a human-readable label for a `NotebookEditMode`.
 pub(crate) fn format_notebook_edit_mode(mode: NotebookEditMode) -> String {
     match mode {
         NotebookEditMode::Replace => String::from("replace"),
@@ -561,6 +582,7 @@ pub(crate) fn format_notebook_edit_mode(mode: NotebookEditMode) -> String {
     }
 }
 
+/// Generate a cell ID string for the given index.
 pub(crate) fn make_cell_id(index: usize) -> String {
     format!("cell-{}", index + 1)
 }

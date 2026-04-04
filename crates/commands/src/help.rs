@@ -3,6 +3,7 @@
 use crate::types::{SlashCommandSpec, SLASH_COMMAND_SPECS};
 use crate::validation::find_slash_command_spec;
 
+/// Format the usage string for a slash command spec.
 pub(crate) fn slash_command_usage(spec: &SlashCommandSpec) -> String {
     match spec.argument_hint {
         Some(argument_hint) => format!("/{} {argument_hint}", spec.name),
@@ -10,6 +11,7 @@ pub(crate) fn slash_command_usage(spec: &SlashCommandSpec) -> String {
     }
 }
 
+/// Render detail lines for one slash command (used in `/help <cmd>`).
 pub(crate) fn slash_command_detail_lines(spec: &SlashCommandSpec) -> Vec<String> {
     let mut lines = vec![format!("/{}", spec.name)];
     lines.push(format!("  Summary          {}", spec.summary));
@@ -35,16 +37,19 @@ pub(crate) fn slash_command_detail_lines(spec: &SlashCommandSpec) -> Vec<String>
 }
 
 #[must_use]
+/// Render the full detail block for a command by name.
 pub fn render_slash_command_help_detail(name: &str) -> Option<String> {
     find_slash_command_spec(name).map(|spec| slash_command_detail_lines(spec).join("\n"))
 }
 
 #[must_use]
+/// Return the full static slice of slash command specs.
 pub fn slash_command_specs() -> &'static [SlashCommandSpec] {
     SLASH_COMMAND_SPECS
 }
 
 #[must_use]
+/// Return specs for commands that work with `--resume`.
 pub fn resume_supported_slash_commands() -> Vec<&'static SlashCommandSpec> {
     slash_command_specs()
         .iter()
@@ -52,6 +57,7 @@ pub fn resume_supported_slash_commands() -> Vec<&'static SlashCommandSpec> {
         .collect()
 }
 
+/// Return a human-readable category label for a command name.
 pub(crate) fn slash_command_category(name: &str) -> &'static str {
     match name {
         "help" | "status" | "sandbox" | "model" | "permissions" | "cost" | "resume" | "session"
@@ -64,6 +70,7 @@ pub(crate) fn slash_command_category(name: &str) -> &'static str {
     }
 }
 
+/// Format a single help-list line for a slash command.
 pub(crate) fn format_slash_command_help_line(spec: &SlashCommandSpec) -> String {
     let name = slash_command_usage(spec);
     let alias_suffix = if spec.aliases.is_empty() {
@@ -86,6 +93,7 @@ pub(crate) fn format_slash_command_help_line(spec: &SlashCommandSpec) -> String 
     format!("  {name:<66} {}{alias_suffix}{resume}", spec.summary)
 }
 
+/// Compute the Levenshtein distance between two strings.
 pub(crate) fn levenshtein_distance(left: &str, right: &str) -> usize {
     if left == right {
         return 0;
@@ -116,6 +124,7 @@ pub(crate) fn levenshtein_distance(left: &str, right: &str) -> usize {
 }
 
 #[must_use]
+/// Return suggestions for a mistyped slash command.
 pub fn suggest_slash_commands(input: &str, limit: usize) -> Vec<String> {
     let query = input.trim().trim_start_matches('/').to_ascii_lowercase();
     if query.is_empty() || limit == 0 {
@@ -161,6 +170,7 @@ pub fn suggest_slash_commands(input: &str, limit: usize) -> Vec<String> {
 }
 
 #[must_use]
+/// Render the full `/help` block listing all slash commands.
 pub fn render_slash_command_help() -> String {
     let mut lines = vec![
         "Slash commands".to_string(),

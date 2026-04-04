@@ -1,3 +1,4 @@
+//! Streaming client, multi-provider runtime, and turn-event utilities.
 use std::io::{self, Write};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
@@ -26,9 +27,11 @@ use crate::util::{
     extract_tool_path, first_visible_line, summarize_tool_payload, truncate_for_summary,
 };
 
+/// Interval between heartbeat ticks for long-running internal prompts.
 #[allow(dead_code)] // Used by InternalPromptProgressRun heartbeat thread at runtime
 pub(crate) const INTERNAL_PROGRESS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(3);
 
+/// Live progress state for an internal (background) prompt run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct InternalPromptProgressState {
     pub(crate) command_label: &'static str,
@@ -40,6 +43,7 @@ pub(crate) struct InternalPromptProgressState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Events emitted during the progress lifecycle of an internal prompt.
 #[allow(dead_code)] // Variants used by InternalPromptProgressReporter/Run at runtime
 pub(crate) enum InternalPromptProgressEvent {
     Started,
@@ -56,12 +60,14 @@ struct InternalPromptProgressShared {
     started_at: Instant,
 }
 
+/// Shareable handle for updating and emitting progress during an internal prompt run.
 #[derive(Debug, Clone)]
 pub(crate) struct InternalPromptProgressReporter {
     shared: Arc<InternalPromptProgressShared>,
 }
 
 #[derive(Debug)]
+/// Active run of an internal prompt with a managed heartbeat thread.
 #[allow(dead_code)] // Constructed via InternalPromptProgressRun::start_ultraplan at runtime
 pub(crate) struct InternalPromptProgressRun {
     reporter: InternalPromptProgressReporter,
@@ -71,6 +77,7 @@ pub(crate) struct InternalPromptProgressRun {
 
 #[allow(dead_code)] // Methods used by InternalPromptProgressRun at runtime
 impl InternalPromptProgressReporter {
+    /// Create a reporter configured for a /ultraplan run.
     pub(crate) fn ultraplan(task: &str) -> Self {
         Self {
             shared: Arc::new(InternalPromptProgressShared {
@@ -88,12 +95,14 @@ impl InternalPromptProgressReporter {
         }
     }
 
+    /// Emit a progress event to the terminal.
     pub(crate) fn emit(&self, event: InternalPromptProgressEvent, error: Option<&str>) {
         let snapshot = self.snapshot();
         let line = format_internal_prompt_progress_line(event, &snapshot, self.elapsed(), error);
         self.write_line(&line);
     }
 
+    /// Advance progress to the model-analysis phase.
     pub(crate) fn mark_model_phase(&self) {
         let snapshot = {
             let mut state = self
@@ -118,6 +127,7 @@ impl InternalPromptProgressReporter {
         ));
     }
 
+    /// Advance progress to a tool-execution phase.
     pub(crate) fn mark_tool_phase(&self, name: &str, input: &str) {
         let detail = describe_tool_progress(name, input);
         let snapshot = {
@@ -139,6 +149,7 @@ impl InternalPromptProgressReporter {
         ));
     }
 
+    /// Record that the model produced text output.
     pub(crate) fn mark_text_phase(&self, text: &str) {
         let trimmed = text.trim();
         if trimmed.is_empty() {
@@ -204,6 +215,7 @@ impl InternalPromptProgressReporter {
 
 #[allow(dead_code)] // Methods used by run_ultraplan REPL command at runtime
 impl InternalPromptProgressRun {
+    /// Start an ultraplan run with a heartbeat thread.
     pub(crate) fn start_ultraplan(task: &str) -> Self {
         let reporter = InternalPromptProgressReporter::ultraplan(task);
         reporter.emit(InternalPromptProgressEvent::Started, None);
@@ -224,16 +236,19 @@ impl InternalPromptProgressRun {
         }
     }
 
+    /// Return a clone of the underlying reporter handle.
     pub(crate) fn reporter(&self) -> InternalPromptProgressReporter {
         self.reporter.clone()
     }
 
+    /// Signal successful completion of the run.
     pub(crate) fn finish_success(&mut self) {
         self.stop_heartbeat();
         self.reporter
             .emit(InternalPromptProgressEvent::Complete, None);
     }
 
+    /// Signal that the run failed with an error message.
     pub(crate) fn finish_failure(&mut self, error: &str) {
         self.stop_heartbeat();
         self.reporter
@@ -256,6 +271,7 @@ impl Drop for InternalPromptProgressRun {
     }
 }
 
+/// Format a single progress-line string for the given event and state.
 pub(crate) fn format_internal_prompt_progress_line(
     event: InternalPromptProgressEvent,
     snapshot: &InternalPromptProgressState,
@@ -303,6 +319,7 @@ pub(crate) fn format_internal_prompt_progress_line(
     }
 }
 
+/// Return a short human-readable description of a tool call for progress display.
 pub(crate) fn describe_tool_progress(name: &str, input: &str) -> String {
     let parsed: serde_json::Value =
         serde_json::from_str(input).unwrap_or(serde_json::Value::String(input.to_string()));
@@ -361,6 +378,7 @@ pub(crate) fn describe_tool_progress(name: &str, input: &str) -> String {
     }
 }
 
+/// Multi-provider AI client that dispatches to Anthropic, Gemini, OpenAI, etc.
 pub(crate) struct MultiProviderRuntimeClient {
     runtime: tokio::runtime::Runtime,
     client: ProviderClient,
@@ -373,6 +391,7 @@ pub(crate) struct MultiProviderRuntimeClient {
 }
 
 impl MultiProviderRuntimeClient {
+    /// Construct a client bound to the given provider credential.
     pub(crate) fn new(
         session_id: &str,
         model: String,
@@ -542,6 +561,7 @@ impl ApiClient for MultiProviderRuntimeClient {
     }
 }
 
+/// Extract the final assistant text from a turn summary.
 pub(crate) fn final_assistant_text(summary: &runtime::TurnSummary) -> String {
     summary
         .assistant_messages
@@ -560,6 +580,7 @@ pub(crate) fn final_assistant_text(summary: &runtime::TurnSummary) -> String {
         .unwrap_or_default()
 }
 
+/// Collect all tool-use events from a turn summary as JSON values.
 pub(crate) fn collect_tool_uses(summary: &runtime::TurnSummary) -> Vec<serde_json::Value> {
     summary
         .assistant_messages
@@ -576,6 +597,7 @@ pub(crate) fn collect_tool_uses(summary: &runtime::TurnSummary) -> Vec<serde_jso
         .collect()
 }
 
+/// Collect all tool-result events from a turn summary as JSON values.
 pub(crate) fn collect_tool_results(summary: &runtime::TurnSummary) -> Vec<serde_json::Value> {
     summary
         .tool_results
@@ -598,6 +620,7 @@ pub(crate) fn collect_tool_results(summary: &runtime::TurnSummary) -> Vec<serde_
         .collect()
 }
 
+/// Collect prompt-cache events from a turn summary as JSON values.
 pub(crate) fn collect_prompt_cache_events(
     summary: &runtime::TurnSummary,
 ) -> Vec<serde_json::Value> {
@@ -616,6 +639,7 @@ pub(crate) fn collect_prompt_cache_events(
         .collect()
 }
 
+/// Append an output block from a message response to the event list.
 pub(crate) fn push_output_block(
     block: OutputContentBlock,
     out: &mut (impl Write + ?Sized),
@@ -652,6 +676,7 @@ pub(crate) fn push_output_block(
     Ok(())
 }
 
+/// Convert a `MessageResponse` into a list of `AssistantEvent`s.
 pub(crate) fn response_to_events(
     response: MessageResponse,
     out: &mut (impl Write + ?Sized),
@@ -671,6 +696,7 @@ pub(crate) fn response_to_events(
     Ok(events)
 }
 
+/// Append a prompt-cache record to the event list if one exists on the client.
 pub(crate) fn push_prompt_cache_record(client: &ProviderClient, events: &mut Vec<AssistantEvent>) {
     if let Some(record) = client.take_last_prompt_cache_record() {
         if let Some(event) = prompt_cache_record_to_runtime_event(record) {
@@ -692,6 +718,7 @@ fn prompt_cache_record_to_runtime_event(
     })
 }
 
+/// Convert internal conversation messages into the API wire format.
 pub(crate) fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMessage> {
     messages
         .iter()

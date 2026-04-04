@@ -11,6 +11,7 @@ use crate::types::{
     StructuredOutputResult,
 };
 
+/// Get or set a configuration value.
 pub(crate) fn execute_config(input: ConfigInput) -> Result<ConfigOutput, String> {
     let setting = input.setting.trim();
     if setting.is_empty() {
@@ -58,8 +59,10 @@ pub(crate) fn execute_config(input: ConfigInput) -> Result<ConfigOutput, String>
     }
 }
 
+/// JSON path to the default permission mode setting.
 pub(crate) const PERMISSION_DEFAULT_MODE_PATH: &[&str] = &["permissions", "defaultMode"];
 
+/// Enter plan mode, storing state and returning the mode output.
 pub(crate) fn execute_enter_plan_mode(
     _input: EnterPlanModeInput,
 ) -> Result<PlanModeOutput, String> {
@@ -131,6 +134,7 @@ pub(crate) fn execute_enter_plan_mode(
     })
 }
 
+/// Exit plan mode and return the exit output.
 pub(crate) fn execute_exit_plan_mode(_input: ExitPlanModeInput) -> Result<PlanModeOutput, String> {
     let settings_path = config_file_for_scope(ConfigScope::Settings)?;
     let state_path = plan_mode_state_file()?;
@@ -202,6 +206,7 @@ pub(crate) fn execute_exit_plan_mode(_input: ExitPlanModeInput) -> Result<PlanMo
     })
 }
 
+/// Emit a structured output record.
 pub(crate) fn execute_structured_output(
     input: StructuredOutputInput,
 ) -> Result<StructuredOutputResult, String> {
@@ -214,6 +219,7 @@ pub(crate) fn execute_structured_output(
     })
 }
 
+/// Return the spec for a supported config setting name.
 pub(crate) fn supported_config_setting(setting: &str) -> Option<ConfigSettingSpec> {
     Some(match setting {
         "theme" => ConfigSettingSpec {
@@ -316,6 +322,7 @@ pub(crate) fn supported_config_setting(setting: &str) -> Option<ConfigSettingSpe
     })
 }
 
+/// Validate and normalize a config value for a setting spec.
 pub(crate) fn normalize_config_value(
     spec: ConfigSettingSpec,
     value: ConfigValue,
@@ -352,6 +359,7 @@ pub(crate) fn normalize_config_value(
     Ok(normalized)
 }
 
+/// Return the config file path for the given scope.
 pub(crate) fn config_file_for_scope(scope: ConfigScope) -> Result<PathBuf, String> {
     let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
     Ok(match scope {
@@ -360,6 +368,7 @@ pub(crate) fn config_file_for_scope(scope: ConfigScope) -> Result<PathBuf, Strin
     })
 }
 
+/// Return the `~/.claude` config home directory.
 pub(crate) fn config_home_dir() -> Result<PathBuf, String> {
     if let Ok(path) = std::env::var("CLAW_CONFIG_HOME") {
         return Ok(PathBuf::from(path));
@@ -368,6 +377,7 @@ pub(crate) fn config_home_dir() -> Result<PathBuf, String> {
     Ok(PathBuf::from(home).join(".claw"))
 }
 
+/// Read a JSON object from disk, returning empty object if file missing.
 pub(crate) fn read_json_object(path: &Path) -> Result<serde_json::Map<String, Value>, String> {
     match std::fs::read_to_string(path) {
         Ok(contents) => {
@@ -385,6 +395,7 @@ pub(crate) fn read_json_object(path: &Path) -> Result<serde_json::Map<String, Va
     }
 }
 
+/// Write a JSON object to disk with pretty-printing.
 pub(crate) fn write_json_object(
     path: &Path,
     value: &serde_json::Map<String, Value>,
@@ -399,6 +410,7 @@ pub(crate) fn write_json_object(
     .map_err(|error| error.to_string())
 }
 
+/// Get a nested value by dot-separated path.
 pub(crate) fn get_nested_value<'a>(
     value: &'a serde_json::Map<String, Value>,
     path: &[&str],
@@ -411,6 +423,7 @@ pub(crate) fn get_nested_value<'a>(
     Some(current)
 }
 
+/// Set a nested value by dot-separated path, creating objects as needed.
 pub(crate) fn set_nested_value(
     root: &mut serde_json::Map<String, Value>,
     path: &[&str],
@@ -432,6 +445,7 @@ pub(crate) fn set_nested_value(
     set_nested_value(map, rest, new_value);
 }
 
+/// Remove a nested value by dot-separated path.
 pub(crate) fn remove_nested_value(
     root: &mut serde_json::Map<String, Value>,
     path: &[&str],
@@ -459,6 +473,7 @@ pub(crate) fn remove_nested_value(
     removed
 }
 
+/// Return the path to the plan-mode state file.
 pub(crate) fn plan_mode_state_file() -> Result<PathBuf, String> {
     Ok(config_file_for_scope(ConfigScope::Settings)?
         .parent()
@@ -467,6 +482,7 @@ pub(crate) fn plan_mode_state_file() -> Result<PathBuf, String> {
         .join("plan-mode.json"))
 }
 
+/// Read the plan-mode state from disk.
 pub(crate) fn read_plan_mode_state(path: &Path) -> Result<Option<PlanModeState>, String> {
     match std::fs::read_to_string(path) {
         Ok(contents) => {
@@ -482,6 +498,7 @@ pub(crate) fn read_plan_mode_state(path: &Path) -> Result<Option<PlanModeState>,
     }
 }
 
+/// Write the plan-mode state to disk.
 pub(crate) fn write_plan_mode_state(path: &Path, state: &PlanModeState) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -493,6 +510,7 @@ pub(crate) fn write_plan_mode_state(path: &Path, state: &PlanModeState) -> Resul
     .map_err(|error| error.to_string())
 }
 
+/// Delete the plan-mode state file.
 pub(crate) fn clear_plan_mode_state(path: &Path) -> Result<(), String> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),

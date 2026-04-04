@@ -9,6 +9,7 @@ use crate::help::render_slash_command_help;
 use crate::plugins_command::SlashCommandResult;
 use crate::types::SlashCommand;
 
+/// Build the `/cost` report for a session.
 pub(crate) fn handle_cost(session: &Session) -> String {
     let mut output = String::new();
     output.push_str("## Token Usage\n\n");
@@ -22,6 +23,7 @@ pub(crate) fn handle_cost(session: &Session) -> String {
     output
 }
 
+/// Build the `/diff` git diff report.
 pub(crate) fn handle_diff() -> String {
     match std::process::Command::new("git")
         .args(["diff", "--stat"])
@@ -42,10 +44,12 @@ pub(crate) fn handle_diff() -> String {
     }
 }
 
+/// Build the `/commit` placeholder report.
 pub(crate) fn handle_commit() -> String {
     "Use: /commit is currently a placeholder.\n\nTo commit changes:\n1. Stage your changes with: git add <files>\n2. Run: git commit -m \"Your message\"\n\nFull git integration with automatic message generation coming soon.".to_string()
 }
 
+/// Build the `/debug-tool-call` report.
 pub(crate) fn handle_debug_tool_call(session: &Session) -> String {
     use runtime::ContentBlock;
 
@@ -64,6 +68,7 @@ pub(crate) fn handle_debug_tool_call(session: &Session) -> String {
     "No tool calls found in session.".to_string()
 }
 
+/// Build the `/sandbox` status report.
 pub(crate) fn handle_sandbox() -> String {
     let mut output = String::new();
     output.push_str("## Sandbox Status\n\n");
@@ -78,6 +83,7 @@ pub(crate) fn handle_sandbox() -> String {
     output
 }
 
+/// Build the `/session` info report.
 pub(crate) fn handle_session(session: &Session) -> String {
     let mut output = String::new();
     output.push_str("## Session Info\n\n");
@@ -94,6 +100,7 @@ pub(crate) fn handle_session(session: &Session) -> String {
 }
 
 #[must_use]
+/// Dispatch a slash command and return the result.
 pub fn handle_slash_command(
     input: &str,
     session: &Session,

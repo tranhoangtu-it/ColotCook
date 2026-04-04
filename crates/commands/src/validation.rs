@@ -5,11 +5,13 @@ use crate::help::{render_slash_command_help_detail, slash_command_specs};
 use crate::types::{SlashCommand, SlashCommandParseError, SlashCommandSpec};
 
 impl SlashCommand {
+    /// Parse a raw input string into an optional slash command.
     pub fn parse(input: &str) -> Result<Option<Self>, SlashCommandParseError> {
         validate_slash_command_input(input)
     }
 }
 
+/// Validate and parse a slash command input string.
 pub fn validate_slash_command_input(
     input: &str,
 ) -> Result<Option<SlashCommand>, SlashCommandParseError> {
@@ -108,6 +110,7 @@ pub fn validate_slash_command_input(
         other => SlashCommand::Unknown(other.to_string()),
     }))
 }
+/// Return an error if any unexpected arguments are present.
 pub(crate) fn validate_no_args(command: &str, args: &[&str]) -> Result<(), SlashCommandParseError> {
     if args.is_empty() {
         return Ok(());
@@ -120,6 +123,7 @@ pub(crate) fn validate_no_args(command: &str, args: &[&str]) -> Result<(), Slash
     ))
 }
 
+/// Extract an optional single-word argument.
 pub(crate) fn optional_single_arg(
     command: &str,
     args: &[&str],
@@ -132,6 +136,7 @@ pub(crate) fn optional_single_arg(
     }
 }
 
+/// Extract the remainder after the command name as a required argument.
 pub(crate) fn require_remainder(
     command: &str,
     remainder: Option<String>,
@@ -140,6 +145,7 @@ pub(crate) fn require_remainder(
     remainder.ok_or_else(|| usage_error(command, argument_hint))
 }
 
+/// Parse a `/permissions` command argument.
 pub(crate) fn parse_permissions_mode(
     args: &[&str],
 ) -> Result<Option<String>, SlashCommandParseError> {
@@ -167,6 +173,7 @@ pub(crate) fn parse_permissions_mode(
     Ok(None)
 }
 
+/// Parse `/clear` arguments, returning whether `--confirm` was passed.
 pub(crate) fn parse_clear_args(args: &[&str]) -> Result<bool, SlashCommandParseError> {
     match args {
         [] => Ok(false),
@@ -180,6 +187,7 @@ pub(crate) fn parse_clear_args(args: &[&str]) -> Result<bool, SlashCommandParseE
     }
 }
 
+/// Parse an optional `/config` section argument.
 pub(crate) fn parse_config_section(
     args: &[&str],
 ) -> Result<Option<String>, SlashCommandParseError> {
@@ -198,6 +206,7 @@ pub(crate) fn parse_config_section(
     Ok(None)
 }
 
+/// Parse `/session` sub-command and target arguments.
 pub(crate) fn parse_session_command(args: &[&str]) -> Result<SlashCommand, SlashCommandParseError> {
     match args {
         [] => Ok(SlashCommand::Session {
@@ -242,6 +251,7 @@ pub(crate) fn parse_session_command(args: &[&str]) -> Result<SlashCommand, Slash
     }
 }
 
+/// Parse `/plugins` sub-command and target arguments.
 pub(crate) fn parse_plugin_command(args: &[&str]) -> Result<SlashCommand, SlashCommandParseError> {
     match args {
         [] => Ok(SlashCommand::Plugins {
@@ -308,6 +318,7 @@ pub(crate) fn parse_plugin_command(args: &[&str]) -> Result<SlashCommand, SlashC
     }
 }
 
+/// Parse args for commands that accept `list` or `help`.
 pub(crate) fn parse_list_or_help_args(
     command: &str,
     args: Option<String>,
@@ -324,6 +335,7 @@ pub(crate) fn parse_list_or_help_args(
     }
 }
 
+/// Parse args for the `/skills` command.
 pub(crate) fn parse_skills_args(
     args: Option<&str>,
 ) -> Result<Option<String>, SlashCommandParseError> {
@@ -358,6 +370,7 @@ pub(crate) fn parse_skills_args(
     ))
 }
 
+/// Build a usage error for a command.
 pub(crate) fn usage_error(command: &str, argument_hint: &str) -> SlashCommandParseError {
     let usage = format!("/{command} {argument_hint}");
     let usage = usage.trim_end().to_string();
@@ -368,6 +381,7 @@ pub(crate) fn usage_error(command: &str, argument_hint: &str) -> SlashCommandPar
     )
 }
 
+/// Build a generic command error with usage hint.
 pub(crate) fn command_error(message: &str, command: &str, usage: &str) -> SlashCommandParseError {
     let detail = render_slash_command_help_detail(command)
         .map(|detail| format!("\n\n{detail}"))
@@ -375,6 +389,7 @@ pub(crate) fn command_error(message: &str, command: &str, usage: &str) -> SlashC
     SlashCommandParseError::new(format!("{message}\n  Usage            {usage}{detail}"))
 }
 
+/// Return the trimmed remainder of `input` after the command word.
 pub(crate) fn remainder_after_command(input: &str, command: &str) -> Option<String> {
     input
         .trim()
@@ -384,6 +399,7 @@ pub(crate) fn remainder_after_command(input: &str, command: &str) -> Option<Stri
         .map(ToOwned::to_owned)
 }
 
+/// Find a slash command spec by name or alias.
 pub(crate) fn find_slash_command_spec(name: &str) -> Option<&'static SlashCommandSpec> {
     slash_command_specs().iter().find(|spec| {
         spec.name.eq_ignore_ascii_case(name)
@@ -394,6 +410,7 @@ pub(crate) fn find_slash_command_spec(name: &str) -> Option<&'static SlashComman
     })
 }
 
+/// Return the root command name, stripping any leading slash.
 pub(crate) fn command_root_name(command: &str) -> &str {
     command.split_whitespace().next().unwrap_or(command)
 }

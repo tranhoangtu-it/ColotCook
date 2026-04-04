@@ -10,6 +10,7 @@ use crate::plugins_command::{
     SkillSummary,
 };
 
+/// Find all definition root directories for agents or skills.
 pub(crate) fn discover_definition_roots(
     cwd: &Path,
     leaf: &str,
@@ -54,6 +55,7 @@ pub(crate) fn discover_definition_roots(
     roots
 }
 
+/// Find all skill root directories relative to `cwd`.
 pub(crate) fn discover_skill_roots(cwd: &Path) -> Vec<SkillRoot> {
     let mut roots = Vec::new();
 
@@ -131,11 +133,13 @@ pub(crate) fn discover_skill_roots(cwd: &Path) -> Vec<SkillRoot> {
     roots
 }
 
+/// Install a skill from the given source into the default root.
 pub(crate) fn install_skill(source: &str, cwd: &Path) -> std::io::Result<InstalledSkill> {
     let registry_root = default_skill_install_root()?;
     install_skill_into(source, cwd, &registry_root)
 }
 
+/// Install a skill from `source` into the given `root`.
 pub(crate) fn install_skill_into(
     source: &str,
     cwd: &Path,
@@ -181,6 +185,7 @@ pub(crate) fn install_skill_into(
     })
 }
 
+/// Return the default skill installation root (`~/.claude/skills`).
 pub(crate) fn default_skill_install_root() -> std::io::Result<PathBuf> {
     if let Ok(codex_home) = env::var("CODEX_HOME") {
         return Ok(PathBuf::from(codex_home).join("skills"));
@@ -194,6 +199,7 @@ pub(crate) fn default_skill_install_root() -> std::io::Result<PathBuf> {
     ))
 }
 
+/// Resolve a source string into a `SkillInstallSource`.
 pub(crate) fn resolve_skill_install_source(
     source: &str,
     cwd: &Path,
@@ -239,6 +245,7 @@ pub(crate) fn resolve_skill_install_source(
     ))
 }
 
+/// Derive the install directory name for a skill.
 pub(crate) fn derive_skill_install_name(
     source: &SkillInstallSource,
     declared_name: Option<&str>,
@@ -258,6 +265,7 @@ pub(crate) fn derive_skill_install_name(
     ))
 }
 
+/// Sanitize a skill name for use as an invocation alias.
 pub(crate) fn sanitize_skill_invocation_name(candidate: &str) -> Option<String> {
     let trimmed = candidate
         .trim()
@@ -288,6 +296,7 @@ pub(crate) fn sanitize_skill_invocation_name(candidate: &str) -> Option<String> 
     (!sanitized.is_empty()).then_some(sanitized)
 }
 
+/// Recursively copy the contents of `source` into `destination`.
 pub(crate) fn copy_directory_contents(source: &Path, destination: &Path) -> std::io::Result<()> {
     for entry in fs::read_dir(source)? {
         let entry = entry?;
@@ -330,6 +339,7 @@ impl SkillInstallSource {
     }
 }
 
+/// Append a root entry only if its path is not already present.
 pub(crate) fn push_unique_root(
     roots: &mut Vec<(DefinitionSource, PathBuf)>,
     source: DefinitionSource,
@@ -340,6 +350,7 @@ pub(crate) fn push_unique_root(
     }
 }
 
+/// Append a skill root only if its path is not already present.
 pub(crate) fn push_unique_skill_root(
     roots: &mut Vec<SkillRoot>,
     source: DefinitionSource,
@@ -355,6 +366,7 @@ pub(crate) fn push_unique_skill_root(
     }
 }
 
+/// Load all agent definitions from the discovered roots.
 pub(crate) fn load_agents_from_roots(
     roots: &[(DefinitionSource, PathBuf)],
 ) -> std::io::Result<Vec<AgentSummary>> {
@@ -398,6 +410,7 @@ pub(crate) fn load_agents_from_roots(
     Ok(agents)
 }
 
+/// Load all skill definitions from the discovered skill roots.
 pub(crate) fn load_skills_from_roots(roots: &[SkillRoot]) -> std::io::Result<Vec<SkillSummary>> {
     let mut skills = Vec::new();
     let mut active_sources = BTreeMap::<String, DefinitionSource>::new();
@@ -475,6 +488,7 @@ pub(crate) fn load_skills_from_roots(roots: &[SkillRoot]) -> std::io::Result<Vec
     Ok(skills)
 }
 
+/// Parse a string value from minimal TOML content.
 pub(crate) fn parse_toml_string(contents: &str, key: &str) -> Option<String> {
     let prefix = format!("{key} =");
     for line in contents.lines() {
@@ -499,6 +513,7 @@ pub(crate) fn parse_toml_string(contents: &str, key: &str) -> Option<String> {
     None
 }
 
+/// Parse YAML/TOML frontmatter from a skill file.
 pub(crate) fn parse_skill_frontmatter(contents: &str) -> (Option<String>, Option<String>) {
     let mut lines = contents.lines();
     if lines.next().map(str::trim) != Some("---") {
@@ -530,6 +545,7 @@ pub(crate) fn parse_skill_frontmatter(contents: &str) -> (Option<String>, Option
     (name, description)
 }
 
+/// Strip surrounding quotes from a frontmatter value.
 pub(crate) fn unquote_frontmatter_value(value: &str) -> String {
     value
         .strip_prefix('"')
@@ -544,6 +560,7 @@ pub(crate) fn unquote_frontmatter_value(value: &str) -> String {
         .to_string()
 }
 
+/// Render the agents listing report.
 pub(crate) fn render_agents_report(agents: &[AgentSummary]) -> String {
     if agents.is_empty() {
         return "No agents found.".to_string();
@@ -588,6 +605,7 @@ pub(crate) fn render_agents_report(agents: &[AgentSummary]) -> String {
     lines.join("\n").trim_end().to_string()
 }
 
+/// Render a single agent's detail block.
 pub(crate) fn agent_detail(agent: &AgentSummary) -> String {
     let mut parts = vec![agent.name.clone()];
     if let Some(description) = &agent.description {
@@ -602,6 +620,7 @@ pub(crate) fn agent_detail(agent: &AgentSummary) -> String {
     parts.join(" · ")
 }
 
+/// Render the skills listing report.
 pub(crate) fn render_skills_report(skills: &[SkillSummary]) -> String {
     if skills.is_empty() {
         return "No skills found.".to_string();
@@ -653,6 +672,7 @@ pub(crate) fn render_skills_report(skills: &[SkillSummary]) -> String {
     lines.join("\n").trim_end().to_string()
 }
 
+/// Render a report after installing a skill.
 pub(crate) fn render_skill_install_report(skill: &InstalledSkill) -> String {
     let mut lines = vec![
         "Skills".to_string(),
@@ -674,10 +694,12 @@ pub(crate) fn render_skill_install_report(skill: &InstalledSkill) -> String {
     lines.join("\n")
 }
 
+/// Normalize an optional args string (trim whitespace, return None if empty).
 pub(crate) fn normalize_optional_args(args: Option<&str>) -> Option<&str> {
     args.map(str::trim).filter(|value| !value.is_empty())
 }
 
+/// Render the usage string for the `/agents` command.
 pub(crate) fn render_agents_usage(unexpected: Option<&str>) -> String {
     let mut lines = vec![
         "Agents".to_string(),
@@ -691,6 +713,7 @@ pub(crate) fn render_agents_usage(unexpected: Option<&str>) -> String {
     lines.join("\n")
 }
 
+/// Render the usage string for the `/skills` command.
 pub(crate) fn render_skills_usage(unexpected: Option<&str>) -> String {
     let mut lines = vec![
         "Skills".to_string(),
