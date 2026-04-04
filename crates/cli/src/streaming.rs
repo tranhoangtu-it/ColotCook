@@ -759,3 +759,333 @@ pub(crate) fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMes
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use colotcook_runtime::{AssistantEvent, ContentBlock, ConversationMessage, MessageRole, TokenUsage};
+
+    fn empty_summary() -> runtime::TurnSummary {
+        runtime::TurnSummary {
+            assistant_messages: vec![],
+            tool_results: vec![],
+            prompt_cache_events: vec![],
+            usage: TokenUsage { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+            iterations: 0,
+            auto_compaction: None,
+        }
+    }
+
+    fn msg(role: MessageRole, blocks: Vec<ContentBlock>) -> ConversationMessage {
+        ConversationMessage { role, blocks, usage: None }
+    }
+
+    fn test_response(content: Vec<OutputContentBlock>) -> MessageResponse {
+        MessageResponse {
+            content,
+            usage: colotcook_api::Usage { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+            id: "msg_1".into(), kind: "message".into(), model: "test".into(), role: "assistant".into(),
+            stop_reason: Some("end_turn".into()), stop_sequence: None, request_id: None,
+        }
+    }
+
+    // --- convert_messages ---
+
+    #[test]
+    fn convert_messages_empty() { assert!(convert_messages(&[]).is_empty()); }
+
+    #[test]
+    fn convert_messages_user_text() {
+        let r = convert_messages(&[msg(MessageRole::User, vec![ContentBlock::Text { text: "hi".into() }])]);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].role, "user");
+    }
+
+    #[test]
+    fn convert_messages_assistant() {
+        let r = convert_messages(&[msg(MessageRole::Assistant, vec![ContentBlock::Text { text: "a".into() }])]);
+        assert_eq!(r[0].role, "assistant");
+    }
+
+    #[test]
+    fn convert_messages_system_to_user() {
+        assert_eq!(convert_messages(&[msg(MessageRole::System, vec![ContentBlock::Text { text: "s".into() }])])[0].role, "user");
+    }
+
+    #[test]
+    fn convert_messages_tool_to_user() {
+        assert_eq!(convert_messages(&[msg(MessageRole::Tool, vec![ContentBlock::Text { text: "o".into() }])])[0].role, "user");
+    }
+
+    #[test]
+    fn convert_messages_tool_use_block() {
+        let r = convert_messages(&[msg(MessageRole::Assistant, vec![ContentBlock::ToolUse { id: "t".into(), name: "b".into(), input: r#"{"command":"ls"}"#.into() }])]);
+        assert_eq!(r.len(), 1);
+    }
+
+    #[test]
+    fn convert_messages_invalid_json_fallback() {
+        let r = convert_messages(&[msg(MessageRole::Assistant, vec![ContentBlock::ToolUse { id: "t".into(), name: "b".into(), input: "bad".into() }])]);
+        assert_eq!(r.len(), 1);
+    }
+
+    #[test]
+    fn convert_messages_tool_result() {
+        let r = convert_messages(&[msg(MessageRole::Tool, vec![ContentBlock::ToolResult { tool_use_id: "t".into(), tool_name: "b".into(), output: "ok".into(), is_error: false }])]);
+        assert_eq!(r.len(), 1);
+    }
+
+    #[test]
+    fn convert_messages_empty_blocks_omitted() {
+        assert!(convert_messages(&[msg(MessageRole::User, vec![])]).is_empty());
+    }
+
+    #[test]
+    fn convert_messages_multiple() {
+        let r = convert_messages(&[
+            msg(MessageRole::User, vec![ContentBlock::Text { text: "q".into() }]),
+            msg(MessageRole::Assistant, vec![ContentBlock::Text { text: "a".into() }]),
+        ]);
+        assert_eq!(r.len(), 2);
+    }
+
+    // --- final_assistant_text ---
+
+    #[test]
+    fn final_text_empty() { assert_eq!(final_assistant_text(&empty_summary()), ""); }
+
+    #[test]
+    fn final_text_single() {
+        let mut s = empty_summary();
+        s.assistant_messages = vec![msg(MessageRole::Assistant, vec![ContentBlock::Text { text: "hello".into() }])];
+        assert_eq!(final_assistant_text(&s), "hello");
+    }
+
+    #[test]
+    fn final_text_uses_last() {
+        let mut s = empty_summary();
+        s.assistant_messages = vec![
+            msg(MessageRole::Assistant, vec![ContentBlock::Text { text: "first".into() }]),
+            msg(MessageRole::Assistant, vec![ContentBlock::Text { text: "second".into() }]),
+        ];
+        assert_eq!(final_assistant_text(&s), "second");
+    }
+
+    #[test]
+    fn final_text_ignores_tool_use() {
+        let mut s = empty_summary();
+        s.assistant_messages = vec![msg(MessageRole::Assistant, vec![
+            ContentBlock::ToolUse { id: "t".into(), name: "b".into(), input: "{}".into() },
+            ContentBlock::Text { text: "result".into() },
+        ])];
+        assert_eq!(final_assistant_text(&s), "result");
+    }
+
+    #[test]
+    fn final_text_concatenates() {
+        let mut s = empty_summary();
+        s.assistant_messages = vec![msg(MessageRole::Assistant, vec![
+            ContentBlock::Text { text: "p1".into() },
+            ContentBlock::Text { text: "p2".into() },
+        ])];
+        assert_eq!(final_assistant_text(&s), "p1p2");
+    }
+
+    // --- collect_tool_uses ---
+
+    #[test]
+    fn tool_uses_empty() { assert!(collect_tool_uses(&empty_summary()).is_empty()); }
+
+    #[test]
+    fn tool_uses_captures() {
+        let mut s = empty_summary();
+        s.assistant_messages = vec![msg(MessageRole::Assistant, vec![ContentBlock::ToolUse { id: "t1".into(), name: "bash".into(), input: "{}".into() }])];
+        let u = collect_tool_uses(&s);
+        assert_eq!(u.len(), 1);
+        assert_eq!(u[0]["name"], "bash");
+    }
+
+    // --- collect_tool_results ---
+
+    #[test]
+    fn tool_results_empty() { assert!(collect_tool_results(&empty_summary()).is_empty()); }
+
+    #[test]
+    fn tool_results_captures() {
+        let mut s = empty_summary();
+        s.tool_results = vec![msg(MessageRole::Tool, vec![ContentBlock::ToolResult { tool_use_id: "t1".into(), tool_name: "bash".into(), output: "ok".into(), is_error: false }])];
+        let r = collect_tool_results(&s);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0]["tool_use_id"], "t1");
+    }
+
+    // --- collect_prompt_cache_events ---
+
+    #[test]
+    fn cache_events_empty() { assert!(collect_prompt_cache_events(&empty_summary()).is_empty()); }
+
+    #[test]
+    fn cache_events_captures() {
+        let mut s = empty_summary();
+        s.prompt_cache_events = vec![runtime::PromptCacheEvent { unexpected: true, reason: "test".into(), previous_cache_read_input_tokens: 100, current_cache_read_input_tokens: 50, token_drop: 50 }];
+        let e = collect_prompt_cache_events(&s);
+        assert_eq!(e.len(), 1);
+        assert_eq!(e[0]["unexpected"], true);
+    }
+
+    // --- push_output_block ---
+
+    #[test]
+    fn output_block_text() {
+        let mut events = Vec::new();
+        let mut pt = None;
+        push_output_block(OutputContentBlock::Text { text: "hi".into() }, &mut io::sink(), &mut events, &mut pt, true).unwrap();
+        assert!(matches!(&events[0], AssistantEvent::TextDelta(t) if t == "hi"));
+    }
+
+    #[test]
+    fn output_block_empty_text() {
+        let mut events = Vec::new();
+        let mut pt = None;
+        push_output_block(OutputContentBlock::Text { text: "".into() }, &mut io::sink(), &mut events, &mut pt, true).unwrap();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn output_block_tool_streaming() {
+        let mut events = Vec::new();
+        let mut pt = None;
+        push_output_block(OutputContentBlock::ToolUse { id: "t".into(), name: "b".into(), input: serde_json::json!({}) }, &mut io::sink(), &mut events, &mut pt, true).unwrap();
+        assert_eq!(pt.unwrap().2, "");
+    }
+
+    #[test]
+    fn output_block_tool_non_streaming() {
+        let mut events = Vec::new();
+        let mut pt = None;
+        push_output_block(OutputContentBlock::ToolUse { id: "t".into(), name: "b".into(), input: serde_json::json!({"k":"v"}) }, &mut io::sink(), &mut events, &mut pt, false).unwrap();
+        assert!(pt.unwrap().2.contains("k"));
+    }
+
+    #[test]
+    fn output_block_thinking() {
+        let mut events = Vec::new();
+        let mut pt = None;
+        push_output_block(OutputContentBlock::Thinking { thinking: "x".into(), signature: None }, &mut io::sink(), &mut events, &mut pt, true).unwrap();
+        assert!(events.is_empty());
+    }
+
+    // --- response_to_events ---
+
+    #[test]
+    fn resp_events_text() {
+        let events = response_to_events(test_response(vec![OutputContentBlock::Text { text: "hi".into() }]), &mut io::sink()).unwrap();
+        assert!(events.iter().any(|e| matches!(e, AssistantEvent::TextDelta(_))));
+        assert!(events.iter().any(|e| matches!(e, AssistantEvent::MessageStop)));
+    }
+
+    #[test]
+    fn resp_events_tool_use() {
+        let events = response_to_events(test_response(vec![OutputContentBlock::ToolUse { id: "t".into(), name: "bash".into(), input: serde_json::json!({"c":"l"}) }]), &mut io::sink()).unwrap();
+        assert!(events.iter().any(|e| matches!(e, AssistantEvent::ToolUse { name, .. } if name == "bash")));
+    }
+
+    // --- format_internal_prompt_progress_line ---
+
+    fn snap(step: usize, phase: &str, detail: Option<&str>) -> InternalPromptProgressState {
+        InternalPromptProgressState { command_label: "Ultraplan", task_label: "t".into(), step, phase: phase.into(), detail: detail.map(Into::into), saw_final_text: false }
+    }
+
+    #[test]
+    fn progress_started() {
+        let l = format_internal_prompt_progress_line(InternalPromptProgressEvent::Started, &snap(0, "planning", Some("task: t")), Duration::from_secs(0), None);
+        assert!(l.contains("Ultraplan") && l.contains("current step pending"));
+    }
+
+    #[test]
+    fn progress_update() {
+        let l = format_internal_prompt_progress_line(InternalPromptProgressEvent::Update, &snap(3, "analyzing", None), Duration::from_secs(5), None);
+        assert!(l.contains("current step 3"));
+    }
+
+    #[test]
+    fn progress_heartbeat() {
+        let l = format_internal_prompt_progress_line(InternalPromptProgressEvent::Heartbeat, &snap(1, "w", None), Duration::from_secs(15), None);
+        assert!(l.contains("heartbeat") && l.contains("15s elapsed"));
+    }
+
+    #[test]
+    fn progress_complete() {
+        let mut s = snap(5, "done", None);
+        s.saw_final_text = true;
+        let l = format_internal_prompt_progress_line(InternalPromptProgressEvent::Complete, &s, Duration::from_secs(30), None);
+        assert!(l.contains("completed") && l.contains("5 steps total"));
+    }
+
+    #[test]
+    fn progress_failed_with_err() {
+        let l = format_internal_prompt_progress_line(InternalPromptProgressEvent::Failed, &snap(2, "x", None), Duration::from_secs(10), Some("timeout"));
+        assert!(l.contains("failed") && l.contains("timeout"));
+    }
+
+    #[test]
+    fn progress_failed_unknown() {
+        let l = format_internal_prompt_progress_line(InternalPromptProgressEvent::Failed, &snap(1, "x", None), Duration::from_secs(5), None);
+        assert!(l.contains("unknown error"));
+    }
+
+    // --- describe_tool_progress ---
+
+    #[test]
+    fn tool_prog_bash() { assert!(describe_tool_progress("bash", r#"{"command":"ls -la"}"#).contains("ls -la")); }
+    #[test]
+    fn tool_prog_bash_alias() { assert!(describe_tool_progress("Bash", r#"{"command":"echo hi"}"#).contains("echo hi")); }
+    #[test]
+    fn tool_prog_bash_empty() { assert_eq!(describe_tool_progress("bash", r#"{"command":""}"#), "running shell command"); }
+    #[test]
+    fn tool_prog_read() { assert!(describe_tool_progress("Read", r#"{"file_path":"main.rs"}"#).contains("reading")); }
+    #[test]
+    fn tool_prog_write() { assert!(describe_tool_progress("Write", r#"{"file_path":"o.txt"}"#).contains("writing")); }
+    #[test]
+    fn tool_prog_edit() { assert!(describe_tool_progress("Edit", r#"{"file_path":"lib.rs"}"#).contains("editing")); }
+    #[test]
+    fn tool_prog_glob() { let r = describe_tool_progress("Glob", r#"{"pattern":"*.rs","path":"src"}"#); assert!(r.contains("glob") && r.contains("*.rs")); }
+    #[test]
+    fn tool_prog_grep() { let r = describe_tool_progress("Grep", r#"{"pattern":"TODO","path":"src"}"#); assert!(r.contains("grep") && r.contains("TODO")); }
+    #[test]
+    fn tool_prog_web_search() { assert!(describe_tool_progress("web_search", r#"{"query":"rust"}"#).contains("rust")); }
+    #[test]
+    fn tool_prog_web_search_none() { assert_eq!(describe_tool_progress("WebSearch", "{}"), "running web search"); }
+    #[test]
+    fn tool_prog_unknown() { assert!(describe_tool_progress("custom", "{}").contains("custom")); }
+    #[test]
+    fn tool_prog_bad_json() { assert!(!describe_tool_progress("bash", "not json").is_empty()); }
+
+    // --- InternalPromptProgressReporter ---
+
+    #[test]
+    fn reporter_snapshot() {
+        let r = InternalPromptProgressReporter::ultraplan("build");
+        let s = r.snapshot();
+        assert_eq!(s.command_label, "Ultraplan");
+        assert_eq!(s.step, 0);
+    }
+
+    #[test]
+    fn reporter_elapsed() {
+        assert!(InternalPromptProgressReporter::ultraplan("t").elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn state_clone_eq() {
+        let s = snap(2, "r", None);
+        assert_eq!(s.clone(), s);
+    }
+
+    #[test]
+    fn event_copy_eq() {
+        let e = InternalPromptProgressEvent::Started;
+        let c = e;
+        assert_eq!(e, c);
+    }
+}

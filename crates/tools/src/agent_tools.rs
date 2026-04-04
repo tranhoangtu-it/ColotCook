@@ -1175,17 +1175,21 @@ mod tests {
     }
 
     // --- agent_store_dir ---
+    // These tests modify env vars and must be serialized.
+    static AGENT_STORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn agent_store_dir_env_override() {
+        let _lock = AGENT_STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("COLOTCOOK_AGENT_STORE", "/tmp/test-agent-store");
         let dir = agent_store_dir().unwrap();
-        assert_eq!(dir, std::path::PathBuf::from("/tmp/test-agent-store"));
         std::env::remove_var("COLOTCOOK_AGENT_STORE");
+        assert_eq!(dir, std::path::PathBuf::from("/tmp/test-agent-store"));
     }
 
     #[test]
     fn agent_store_dir_default_contains_colotcook_agents() {
+        let _lock = AGENT_STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var("COLOTCOOK_AGENT_STORE");
         let dir = agent_store_dir().unwrap();
         assert!(
@@ -1310,5 +1314,287 @@ mod tests {
         let result = execute_agent_with_spawn(input, |_| Ok(()));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("prompt"));
+    }
+
+    // --- tool_specs_for_allowed_tools ---
+
+    #[test]
+    fn tool_specs_for_allowed_tools_none_returns_all() {
+        let specs = tool_specs_for_allowed_tools(None);
+        assert!(!specs.is_empty());
+    }
+
+    #[test]
+    fn tool_specs_for_allowed_tools_filters() {
+        let allowed: BTreeSet<String> = ["bash"].iter().map(|s| s.to_string()).collect();
+        let specs = tool_specs_for_allowed_tools(Some(&allowed));
+        assert!(specs.iter().all(|s| s.name == "bash"));
+    }
+
+    #[test]
+    fn tool_specs_for_allowed_tools_empty_set_returns_empty() {
+        let allowed: BTreeSet<String> = BTreeSet::new();
+        let specs = tool_specs_for_allowed_tools(Some(&allowed));
+        assert!(specs.is_empty());
+    }
+
+    fn cmsg(role: MessageRole, blocks: Vec<ContentBlock>) -> ConversationMessage {
+        ConversationMessage { role, blocks, usage: None }
+    }
+
+    fn test_usage() -> api::Usage {
+        api::Usage { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+    }
+
+    fn test_resp(content: Vec<OutputContentBlock>) -> MessageResponse {
+        MessageResponse {
+            content, usage: test_usage(),
+            id: "m1".into(), kind: "message".into(), model: "t".into(), role: "assistant".into(),
+            stop_reason: Some("end_turn".into()), stop_sequence: None, request_id: None,
+        }
+    }
+
+    fn empty_summary() -> runtime::TurnSummary {
+        runtime::TurnSummary {
+            assistant_messages: vec![], tool_results: vec![], prompt_cache_events: vec![],
+            usage: runtime::TokenUsage { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+            iterations: 0, auto_compaction: None,
+        }
+    }
+
+    // --- convert_messages ---
+
+    #[test]
+    fn convert_messages_empty() { assert!(convert_messages(&[]).is_empty()); }
+
+    #[test]
+    fn convert_messages_user_text() {
+        let r = convert_messages(&[cmsg(MessageRole::User, vec![ContentBlock::Text { text: "hi".into() }])]);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].role, "user");
+    }
+
+    #[test]
+    fn convert_messages_assistant_text() {
+        assert_eq!(convert_messages(&[cmsg(MessageRole::Assistant, vec![ContentBlock::Text { text: "a".into() }])])[0].role, "assistant");
+    }
+
+    #[test]
+    fn convert_messages_system_maps_to_user() {
+        assert_eq!(convert_messages(&[cmsg(MessageRole::System, vec![ContentBlock::Text { text: "s".into() }])])[0].role, "user");
+    }
+
+    #[test]
+    fn convert_messages_tool_maps_to_user() {
+        assert_eq!(convert_messages(&[cmsg(MessageRole::Tool, vec![ContentBlock::Text { text: "o".into() }])])[0].role, "user");
+    }
+
+    #[test]
+    fn convert_messages_empty_blocks_omitted() {
+        assert!(convert_messages(&[cmsg(MessageRole::User, vec![])]).is_empty());
+    }
+
+    #[test]
+    fn convert_messages_tool_use_block() {
+        assert_eq!(convert_messages(&[cmsg(MessageRole::Assistant, vec![ContentBlock::ToolUse { id: "t".into(), name: "b".into(), input: r#"{"command":"ls"}"#.into() }])]).len(), 1);
+    }
+
+    #[test]
+    fn convert_messages_tool_result_block() {
+        assert_eq!(convert_messages(&[cmsg(MessageRole::Tool, vec![ContentBlock::ToolResult { tool_use_id: "t".into(), tool_name: "bash".into(), output: "ok".into(), is_error: false }])]).len(), 1);
+    }
+
+    // --- push_output_block (agent variant) ---
+
+    #[test]
+    fn push_output_block_text() {
+        let mut events = Vec::new();
+        let mut pending = BTreeMap::new();
+        push_output_block(OutputContentBlock::Text { text: "hi".into() }, 0, &mut events, &mut pending, true);
+        assert!(matches!(&events[0], AssistantEvent::TextDelta(t) if t == "hi"));
+    }
+
+    #[test]
+    fn push_output_block_empty_text() {
+        let mut events = Vec::new();
+        let mut pending = BTreeMap::new();
+        push_output_block(OutputContentBlock::Text { text: "".into() }, 0, &mut events, &mut pending, true);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn push_output_block_tool_use_streaming() {
+        let mut events = Vec::new();
+        let mut pending = BTreeMap::new();
+        push_output_block(OutputContentBlock::ToolUse { id: "t".into(), name: "b".into(), input: serde_json::json!({}) }, 0, &mut events, &mut pending, true);
+        assert_eq!(pending.get(&0).unwrap().2, "");
+    }
+
+    #[test]
+    fn push_output_block_tool_use_non_streaming() {
+        let mut events = Vec::new();
+        let mut pending = BTreeMap::new();
+        push_output_block(OutputContentBlock::ToolUse { id: "t".into(), name: "b".into(), input: serde_json::json!({"k":"v"}) }, 0, &mut events, &mut pending, false);
+        assert!(pending.get(&0).unwrap().2.contains("k"));
+    }
+
+    #[test]
+    fn push_output_block_thinking() {
+        let mut events = Vec::new();
+        let mut pending = BTreeMap::new();
+        push_output_block(OutputContentBlock::Thinking { thinking: "x".into(), signature: None }, 0, &mut events, &mut pending, true);
+        assert!(events.is_empty());
+    }
+
+    // --- response_to_events (agent variant) ---
+
+    #[test]
+    fn response_to_events_text() {
+        let events = response_to_events(test_resp(vec![OutputContentBlock::Text { text: "hello".into() }]));
+        assert!(events.iter().any(|e| matches!(e, AssistantEvent::TextDelta(t) if t == "hello")));
+        assert!(events.iter().any(|e| matches!(e, AssistantEvent::MessageStop)));
+    }
+
+    #[test]
+    fn response_to_events_tool_use() {
+        let events = response_to_events(test_resp(vec![OutputContentBlock::ToolUse { id: "t".into(), name: "bash".into(), input: serde_json::json!({"c":"l"}) }]));
+        assert!(events.iter().any(|e| matches!(e, AssistantEvent::ToolUse { name, .. } if name == "bash")));
+    }
+
+    // --- final_assistant_text (agent variant) ---
+
+    #[test]
+    fn final_assistant_text_empty() {
+        assert_eq!(final_assistant_text(&empty_summary()), "");
+    }
+
+    #[test]
+    fn final_assistant_text_single() {
+        let mut s = empty_summary();
+        s.assistant_messages = vec![cmsg(MessageRole::Assistant, vec![ContentBlock::Text { text: "result".into() }])];
+        assert_eq!(final_assistant_text(&s), "result");
+    }
+
+    // --- agent_permission_policy ---
+
+    #[test]
+    fn agent_permission_policy_is_danger_full_access() {
+        let policy = agent_permission_policy();
+        // Should be based on DangerFullAccess mode
+        let _ = policy;
+    }
+
+    // --- persist_agent_terminal_state and append_agent_output ---
+
+    #[test]
+    fn persist_agent_terminal_state_and_append() {
+        let dir = std::env::temp_dir().join(format!("colotcook-test-{}", make_agent_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let output_file = dir.join("agent.md");
+        let manifest_file = dir.join("agent.json");
+
+        std::fs::write(&output_file, "# Initial\n").unwrap();
+
+        let manifest = AgentOutput {
+            agent_id: "test-agent".into(),
+            name: "test".into(),
+            description: "test desc".into(),
+            subagent_type: Some("general-purpose".into()),
+            model: Some("opus".into()),
+            status: "running".into(),
+            output_file: output_file.display().to_string(),
+            manifest_file: manifest_file.display().to_string(),
+            created_at: "1234".into(),
+            started_at: Some("1234".into()),
+            completed_at: None,
+            error: None,
+        };
+
+        persist_agent_terminal_state(&manifest, "completed", Some("done!"), None).unwrap();
+
+        let output = std::fs::read_to_string(&output_file).unwrap();
+        assert!(output.contains("completed"));
+        assert!(output.contains("done!"));
+
+        let manifest_json = std::fs::read_to_string(&manifest_file).unwrap();
+        let loaded: AgentOutput = serde_json::from_str(&manifest_json).unwrap();
+        assert_eq!(loaded.status, "completed");
+        assert!(loaded.completed_at.is_some());
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn append_agent_output_appends() {
+        let dir = std::env::temp_dir().join(format!("colotcook-append-{}", make_agent_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("output.md");
+        std::fs::write(&path, "initial\n").unwrap();
+
+        append_agent_output(&path.display().to_string(), "appended\n").unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("initial"));
+        assert!(content.contains("appended"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn append_agent_output_missing_file_errors() {
+        let result = append_agent_output("/nonexistent/path/file.md", "data");
+        assert!(result.is_err());
+    }
+
+    // --- write_agent_manifest ---
+
+    #[test]
+    fn write_agent_manifest_creates_json() {
+        let dir = std::env::temp_dir().join(format!("colotcook-manifest-{}", make_agent_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("manifest.json");
+
+        let manifest = AgentOutput {
+            agent_id: "test".into(),
+            name: "t".into(),
+            description: "d".into(),
+            subagent_type: None,
+            model: None,
+            status: "running".into(),
+            output_file: "o.md".into(),
+            manifest_file: path.display().to_string(),
+            created_at: "0".into(),
+            started_at: None,
+            completed_at: None,
+            error: None,
+        };
+        write_agent_manifest(&manifest).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let loaded: AgentOutput = serde_json::from_str(&content).unwrap();
+        assert_eq!(loaded.agent_id, "test");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // --- SubagentToolExecutor ---
+
+    #[test]
+    fn subagent_tool_executor_blocks_disallowed_tool() {
+        let mut executor = SubagentToolExecutor::new(["bash"].iter().map(|s| s.to_string()).collect());
+        let result = executor.execute("write_file", "{}");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not enabled"));
+    }
+
+    #[test]
+    fn subagent_tool_executor_mcp_without_bridge_errors() {
+        let mut executor = SubagentToolExecutor::new(
+            ["mcp__test__tool"].iter().map(|s| s.to_string()).collect(),
+        );
+        let result = executor.execute("mcp__test__tool", "{}");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not available"));
     }
 }

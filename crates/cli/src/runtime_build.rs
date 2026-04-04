@@ -579,3 +579,126 @@ pub(crate) fn permission_policy(
         },
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use colotcook_runtime::HookProgressReporter;
+
+    // --- resolve_plugin_path ---
+
+    #[test]
+    fn resolve_plugin_path_absolute_returned_as_is() {
+        let cwd = PathBuf::from("/home/user/project");
+        let config_home = PathBuf::from("/home/user/.config");
+        let result = resolve_plugin_path(&cwd, &config_home, "/usr/local/plugin");
+        assert_eq!(result, PathBuf::from("/usr/local/plugin"));
+    }
+
+    #[test]
+    fn resolve_plugin_path_dot_relative_uses_cwd() {
+        let cwd = PathBuf::from("/home/user/project");
+        let config_home = PathBuf::from("/home/user/.config");
+        let result = resolve_plugin_path(&cwd, &config_home, "./my-plugin");
+        assert_eq!(result, PathBuf::from("/home/user/project/my-plugin"));
+    }
+
+    #[test]
+    fn resolve_plugin_path_dot_dot_relative_uses_cwd() {
+        let cwd = PathBuf::from("/home/user/project");
+        let config_home = PathBuf::from("/home/user/.config");
+        let result = resolve_plugin_path(&cwd, &config_home, "../shared-plugin");
+        assert_eq!(result, PathBuf::from("/home/user/project/../shared-plugin"));
+    }
+
+    #[test]
+    fn resolve_plugin_path_bare_name_uses_config_home() {
+        let cwd = PathBuf::from("/home/user/project");
+        let config_home = PathBuf::from("/home/user/.config");
+        let result = resolve_plugin_path(&cwd, &config_home, "plugins/my-plugin");
+        assert_eq!(result, PathBuf::from("/home/user/.config/plugins/my-plugin"));
+    }
+
+    #[test]
+    fn resolve_plugin_path_bare_single_name() {
+        let cwd = PathBuf::from("/home/user/project");
+        let config_home = PathBuf::from("/home/user/.config");
+        let result = resolve_plugin_path(&cwd, &config_home, "my-plugin");
+        assert_eq!(result, PathBuf::from("/home/user/.config/my-plugin"));
+    }
+
+    // --- HookAbortMonitor ---
+
+    #[test]
+    fn hook_abort_monitor_spawn_and_stop() {
+        let signal = runtime::HookAbortSignal::new();
+        let monitor = HookAbortMonitor::spawn_with_waiter(signal, |stop_rx, _signal| {
+            let _ = stop_rx.recv();
+        });
+        monitor.stop();
+        // Should not hang or panic
+    }
+
+    #[test]
+    fn hook_abort_monitor_custom_waiter() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let signal = runtime::HookAbortSignal::new();
+        let waiter_ran = Arc::new(AtomicBool::new(false));
+        let waiter_ran_clone = waiter_ran.clone();
+
+        let monitor = HookAbortMonitor::spawn_with_waiter(signal, move |stop_rx, _signal| {
+            waiter_ran_clone.store(true, Ordering::SeqCst);
+            let _ = stop_rx.recv();
+        });
+        monitor.stop();
+        assert!(waiter_ran.load(Ordering::SeqCst));
+    }
+
+    // --- runtime_hook_config_from_plugin_hooks ---
+
+    #[test]
+    fn runtime_hook_config_from_empty_plugin_hooks() {
+        let hooks = PluginHooks {
+            pre_tool_use: vec![],
+            post_tool_use: vec![],
+            post_tool_use_failure: vec![],
+        };
+        let config = runtime_hook_config_from_plugin_hooks(hooks);
+        // Should produce a valid config with empty hook lists
+        let _ = config;
+    }
+
+    // --- CliPermissionPrompter ---
+
+    #[test]
+    fn cli_permission_prompter_new() {
+        let prompter = CliPermissionPrompter::new(PermissionMode::ReadOnly);
+        assert_eq!(prompter.current_mode, PermissionMode::ReadOnly);
+    }
+
+    // --- CliHookProgressReporter ---
+
+    #[test]
+    fn cli_hook_progress_reporter_started_event() {
+        let mut reporter = CliHookProgressReporter;
+        // Just verify it doesn't panic on any event variant
+        reporter.on_event(&runtime::HookProgressEvent::Started {
+            event: runtime::HookEvent::PreToolUse,
+            tool_name: "bash".to_string(),
+            command: "echo test".to_string(),
+        });
+        reporter.on_event(&runtime::HookProgressEvent::Completed {
+            event: runtime::HookEvent::PostToolUse,
+            tool_name: "bash".to_string(),
+            command: "echo done".to_string(),
+        });
+        reporter.on_event(&runtime::HookProgressEvent::Cancelled {
+            event: runtime::HookEvent::PreToolUse,
+            tool_name: "bash".to_string(),
+            command: "echo cancel".to_string(),
+        });
+    }
+}

@@ -655,3 +655,496 @@ pub(crate) fn slash_command_completion_candidates_with_sessions(
 
     completions.into_iter().collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- resolve_model_alias ---
+
+    #[test]
+    fn resolve_model_alias_opus() {
+        assert_eq!(resolve_model_alias("opus"), "claude-opus-4-6");
+    }
+
+    #[test]
+    fn resolve_model_alias_sonnet() {
+        assert_eq!(resolve_model_alias("sonnet"), "claude-sonnet-4-6");
+    }
+
+    #[test]
+    fn resolve_model_alias_haiku() {
+        assert!(resolve_model_alias("haiku").contains("haiku"));
+    }
+
+    #[test]
+    fn resolve_model_alias_passthrough() {
+        assert_eq!(resolve_model_alias("my-custom-model"), "my-custom-model");
+    }
+
+    #[test]
+    fn resolve_model_alias_empty() {
+        assert_eq!(resolve_model_alias(""), "");
+    }
+
+    // --- CliOutputFormat::parse ---
+
+    #[test]
+    fn cli_output_format_parse_text() {
+        assert_eq!(CliOutputFormat::parse("text").unwrap(), CliOutputFormat::Text);
+    }
+
+    #[test]
+    fn cli_output_format_parse_json() {
+        assert_eq!(CliOutputFormat::parse("json").unwrap(), CliOutputFormat::Json);
+    }
+
+    #[test]
+    fn cli_output_format_parse_invalid() {
+        assert!(CliOutputFormat::parse("xml").is_err());
+    }
+
+    #[test]
+    fn cli_output_format_parse_error_message() {
+        let err = CliOutputFormat::parse("yaml").unwrap_err();
+        assert!(err.contains("yaml"));
+        assert!(err.contains("text or json"));
+    }
+
+    // --- permission_mode_from_label ---
+
+    #[test]
+    fn permission_mode_from_label_read_only() {
+        assert_eq!(permission_mode_from_label("read-only"), PermissionMode::ReadOnly);
+    }
+
+    #[test]
+    fn permission_mode_from_label_workspace_write() {
+        assert_eq!(permission_mode_from_label("workspace-write"), PermissionMode::WorkspaceWrite);
+    }
+
+    #[test]
+    fn permission_mode_from_label_danger() {
+        assert_eq!(permission_mode_from_label("danger-full-access"), PermissionMode::DangerFullAccess);
+    }
+
+    #[test]
+    #[should_panic(expected = "unsupported permission mode label")]
+    fn permission_mode_from_label_invalid_panics() {
+        permission_mode_from_label("invalid");
+    }
+
+    // --- parse_permission_mode_arg ---
+
+    #[test]
+    fn parse_permission_mode_arg_valid() {
+        let mode = parse_permission_mode_arg("read-only").unwrap();
+        assert_eq!(mode, PermissionMode::ReadOnly);
+    }
+
+    #[test]
+    fn parse_permission_mode_arg_workspace_write() {
+        let mode = parse_permission_mode_arg("workspace-write").unwrap();
+        assert_eq!(mode, PermissionMode::WorkspaceWrite);
+    }
+
+    #[test]
+    fn parse_permission_mode_arg_danger() {
+        let mode = parse_permission_mode_arg("danger-full-access").unwrap();
+        assert_eq!(mode, PermissionMode::DangerFullAccess);
+    }
+
+    #[test]
+    fn parse_permission_mode_arg_invalid() {
+        let err = parse_permission_mode_arg("custom").unwrap_err();
+        assert!(err.contains("custom"));
+    }
+
+    // --- max_tokens_for_model ---
+
+    #[test]
+    fn max_tokens_opus_model() {
+        assert_eq!(max_tokens_for_model("claude-opus-4-6"), 32_000);
+    }
+
+    #[test]
+    fn max_tokens_sonnet_model() {
+        assert_eq!(max_tokens_for_model("claude-sonnet-4-6"), 64_000);
+    }
+
+    #[test]
+    fn max_tokens_haiku_model() {
+        assert_eq!(max_tokens_for_model("claude-haiku-4-5-20251213"), 64_000);
+    }
+
+    // --- format_unknown_option ---
+
+    #[test]
+    fn format_unknown_option_contains_option_name() {
+        let msg = format_unknown_option("--foobar");
+        assert!(msg.contains("--foobar"));
+        assert!(msg.contains("unknown option"));
+    }
+
+    #[test]
+    fn format_unknown_option_includes_help_hint() {
+        let msg = format_unknown_option("--xyz");
+        assert!(msg.contains("--help"));
+    }
+
+    #[test]
+    fn format_unknown_option_typo_suggestion() {
+        let msg = format_unknown_option("--modle");
+        // Should suggest --model
+        assert!(msg.contains("--model") || msg.contains("Did you mean"));
+    }
+
+    // --- format_unknown_slash_command ---
+
+    #[test]
+    fn format_unknown_slash_command_contains_name() {
+        let msg = format_unknown_slash_command("foobar");
+        assert!(msg.contains("foobar"));
+        assert!(msg.contains("Unknown slash command"));
+    }
+
+    #[test]
+    fn format_unknown_slash_command_includes_help_hint() {
+        let msg = format_unknown_slash_command("xyz");
+        assert!(msg.contains("/help"));
+    }
+
+    // --- parse_args ---
+
+    #[test]
+    fn parse_args_empty_is_repl() {
+        let action = parse_args(&[]).unwrap();
+        assert!(matches!(action, CliAction::Repl { .. }));
+    }
+
+    #[test]
+    fn parse_args_help_flag() {
+        let action = parse_args(&["--help".into()]).unwrap();
+        assert!(matches!(action, CliAction::Help));
+    }
+
+    #[test]
+    fn parse_args_h_flag() {
+        let action = parse_args(&["-h".into()]).unwrap();
+        assert!(matches!(action, CliAction::Help));
+    }
+
+    #[test]
+    fn parse_args_version_flag() {
+        let action = parse_args(&["--version".into()]).unwrap();
+        assert!(matches!(action, CliAction::Version));
+    }
+
+    #[test]
+    fn parse_args_version_v_flag() {
+        let action = parse_args(&["-V".into()]).unwrap();
+        assert!(matches!(action, CliAction::Version));
+    }
+
+    #[test]
+    fn parse_args_model_flag() {
+        let action = parse_args(&["--model".into(), "sonnet".into()]).unwrap();
+        match action {
+            CliAction::Repl { model, .. } => assert_eq!(model, "claude-sonnet-4-6"),
+            _ => panic!("expected Repl"),
+        }
+    }
+
+    #[test]
+    fn parse_args_model_equals_flag() {
+        let action = parse_args(&["--model=opus".into()]).unwrap();
+        match action {
+            CliAction::Repl { model, .. } => assert_eq!(model, "claude-opus-4-6"),
+            _ => panic!("expected Repl"),
+        }
+    }
+
+    #[test]
+    fn parse_args_model_missing_value() {
+        let err = parse_args(&["--model".into()]).unwrap_err();
+        assert!(err.contains("missing value"));
+    }
+
+    #[test]
+    fn parse_args_output_format_flag() {
+        let action = parse_args(&["--output-format".into(), "json".into(), "-p".into(), "hi".into()]).unwrap();
+        match action {
+            CliAction::Prompt { output_format, .. } => assert_eq!(output_format, CliOutputFormat::Json),
+            _ => panic!("expected Prompt"),
+        }
+    }
+
+    #[test]
+    fn parse_args_output_format_equals() {
+        let action = parse_args(&["--output-format=json".into(), "-p".into(), "hi".into()]).unwrap();
+        match action {
+            CliAction::Prompt { output_format, .. } => assert_eq!(output_format, CliOutputFormat::Json),
+            _ => panic!("expected Prompt"),
+        }
+    }
+
+    #[test]
+    fn parse_args_permission_mode_flag() {
+        let action = parse_args(&["--permission-mode".into(), "read-only".into()]).unwrap();
+        match action {
+            CliAction::Repl { permission_mode, .. } => assert_eq!(permission_mode, PermissionMode::ReadOnly),
+            _ => panic!("expected Repl"),
+        }
+    }
+
+    #[test]
+    fn parse_args_permission_mode_equals() {
+        let action = parse_args(&["--permission-mode=workspace-write".into()]).unwrap();
+        match action {
+            CliAction::Repl { permission_mode, .. } => assert_eq!(permission_mode, PermissionMode::WorkspaceWrite),
+            _ => panic!("expected Repl"),
+        }
+    }
+
+    #[test]
+    fn parse_args_dangerously_skip_permissions() {
+        let action = parse_args(&["--dangerously-skip-permissions".into()]).unwrap();
+        match action {
+            CliAction::Repl { permission_mode, .. } => assert_eq!(permission_mode, PermissionMode::DangerFullAccess),
+            _ => panic!("expected Repl"),
+        }
+    }
+
+    #[test]
+    fn parse_args_p_flag_prompt() {
+        let action = parse_args(&["-p".into(), "hello world".into()]).unwrap();
+        match action {
+            CliAction::Prompt { prompt, .. } => assert_eq!(prompt, "hello world"),
+            _ => panic!("expected Prompt"),
+        }
+    }
+
+    #[test]
+    fn parse_args_p_flag_empty_errors() {
+        let err = parse_args(&["-p".into()]).unwrap_err();
+        assert!(err.contains("requires a prompt"));
+    }
+
+    #[test]
+    fn parse_args_subcommand_version() {
+        let action = parse_args(&["version".into()]).unwrap();
+        assert!(matches!(action, CliAction::Version));
+    }
+
+    #[test]
+    fn parse_args_subcommand_help() {
+        let action = parse_args(&["help".into()]).unwrap();
+        assert!(matches!(action, CliAction::Help));
+    }
+
+    #[test]
+    fn parse_args_subcommand_status() {
+        let action = parse_args(&["status".into()]).unwrap();
+        assert!(matches!(action, CliAction::Status { .. }));
+    }
+
+    #[test]
+    fn parse_args_subcommand_sandbox() {
+        let action = parse_args(&["sandbox".into()]).unwrap();
+        assert!(matches!(action, CliAction::Sandbox));
+    }
+
+    #[test]
+    fn parse_args_subcommand_login() {
+        let action = parse_args(&["login".into()]).unwrap();
+        assert!(matches!(action, CliAction::Login));
+    }
+
+    #[test]
+    fn parse_args_subcommand_logout() {
+        let action = parse_args(&["logout".into()]).unwrap();
+        assert!(matches!(action, CliAction::Logout));
+    }
+
+    #[test]
+    fn parse_args_subcommand_init() {
+        let action = parse_args(&["init".into()]).unwrap();
+        assert!(matches!(action, CliAction::Init));
+    }
+
+    #[test]
+    fn parse_args_subcommand_dump_manifests() {
+        let action = parse_args(&["dump-manifests".into()]).unwrap();
+        assert!(matches!(action, CliAction::DumpManifests));
+    }
+
+    #[test]
+    fn parse_args_subcommand_bootstrap_plan() {
+        let action = parse_args(&["bootstrap-plan".into()]).unwrap();
+        assert!(matches!(action, CliAction::BootstrapPlan));
+    }
+
+    #[test]
+    fn parse_args_subcommand_agents() {
+        let action = parse_args(&["agents".into()]).unwrap();
+        assert!(matches!(action, CliAction::Agents { args: None }));
+    }
+
+    #[test]
+    fn parse_args_subcommand_agents_with_args() {
+        let action = parse_args(&["agents".into(), "help".into()]).unwrap();
+        match action {
+            CliAction::Agents { args } => assert_eq!(args.unwrap(), "help"),
+            _ => panic!("expected Agents"),
+        }
+    }
+
+    #[test]
+    fn parse_args_subcommand_skills() {
+        let action = parse_args(&["skills".into()]).unwrap();
+        assert!(matches!(action, CliAction::Skills { args: None }));
+    }
+
+    #[test]
+    fn parse_args_prompt_subcommand() {
+        let action = parse_args(&["prompt".into(), "hello".into()]).unwrap();
+        match action {
+            CliAction::Prompt { prompt, .. } => assert_eq!(prompt, "hello"),
+            _ => panic!("expected Prompt"),
+        }
+    }
+
+    #[test]
+    fn parse_args_prompt_subcommand_empty_errors() {
+        let err = parse_args(&["prompt".into()]).unwrap_err();
+        assert!(err.contains("requires a prompt"));
+    }
+
+    #[test]
+    fn parse_args_bare_text_is_prompt() {
+        let action = parse_args(&["some".into(), "text".into()]).unwrap();
+        match action {
+            CliAction::Prompt { prompt, .. } => assert_eq!(prompt, "some text"),
+            _ => panic!("expected Prompt"),
+        }
+    }
+
+    #[test]
+    fn parse_args_unknown_flag_errors() {
+        let err = parse_args(&["--unknown-flag".into()]).unwrap_err();
+        assert!(err.contains("unknown option"));
+    }
+
+    #[test]
+    fn parse_args_resume_no_args() {
+        let action = parse_args(&["--resume".into()]).unwrap();
+        assert!(matches!(action, CliAction::ResumeSession { .. }));
+    }
+
+    #[test]
+    fn parse_args_resume_with_path() {
+        let action = parse_args(&["--resume".into(), "session.jsonl".into()]).unwrap();
+        match action {
+            CliAction::ResumeSession { session_path, .. } => {
+                assert_eq!(session_path, PathBuf::from("session.jsonl"));
+            }
+            _ => panic!("expected ResumeSession"),
+        }
+    }
+
+    // --- slash_command_completion_candidates_with_sessions ---
+
+    #[test]
+    fn completion_candidates_includes_help() {
+        let candidates = slash_command_completion_candidates_with_sessions("opus", None, vec![]);
+        assert!(candidates.iter().any(|c| c == "/help"));
+    }
+
+    #[test]
+    fn completion_candidates_includes_model_variants() {
+        let candidates = slash_command_completion_candidates_with_sessions("sonnet", None, vec![]);
+        assert!(candidates.iter().any(|c| c.starts_with("/model")));
+    }
+
+    #[test]
+    fn completion_candidates_includes_session_ids() {
+        let candidates = slash_command_completion_candidates_with_sessions(
+            "opus",
+            Some("active-123"),
+            vec!["recent-456".into()],
+        );
+        assert!(candidates.iter().any(|c| c.contains("active-123")));
+        assert!(candidates.iter().any(|c| c.contains("recent-456")));
+    }
+
+    #[test]
+    fn completion_candidates_empty_session_ids_skipped() {
+        let candidates = slash_command_completion_candidates_with_sessions(
+            "opus",
+            Some("  "),
+            vec!["  ".into()],
+        );
+        // Empty/whitespace session IDs should not generate resume candidates
+        assert!(!candidates.iter().any(|c| c.contains("/resume   ")));
+    }
+
+    // --- looks_like_slash_command_token (indirectly via parse_resume_args) ---
+
+    #[test]
+    fn parse_resume_args_empty() {
+        let action = parse_resume_args(&[]).unwrap();
+        match action {
+            CliAction::ResumeSession { session_path, commands } => {
+                assert_eq!(session_path, PathBuf::from(LATEST_SESSION_REFERENCE));
+                assert!(commands.is_empty());
+            }
+            _ => panic!("expected ResumeSession"),
+        }
+    }
+
+    #[test]
+    fn parse_resume_args_with_session_path() {
+        let action = parse_resume_args(&["my-session.jsonl".into()]).unwrap();
+        match action {
+            CliAction::ResumeSession { session_path, .. } => {
+                assert_eq!(session_path, PathBuf::from("my-session.jsonl"));
+            }
+            _ => panic!("expected ResumeSession"),
+        }
+    }
+
+    #[test]
+    fn parse_resume_args_trailing_non_slash_errors() {
+        let result = parse_resume_args(&["my-session.jsonl".into(), "not-a-command".into()]);
+        assert!(result.is_err());
+    }
+
+    // --- bare_slash_command_guidance ---
+
+    #[test]
+    fn bare_slash_command_guidance_known_subcommand_returns_none() {
+        assert!(bare_slash_command_guidance("login").is_none());
+        assert!(bare_slash_command_guidance("agents").is_none());
+    }
+
+    #[test]
+    fn bare_slash_command_guidance_unknown_returns_none() {
+        assert!(bare_slash_command_guidance("xyznonexistent").is_none());
+    }
+
+    // --- suggest_slash_commands ---
+
+    #[test]
+    fn suggest_slash_commands_returns_some_for_close_match() {
+        let suggestions = suggest_slash_commands("hel");
+        // /help should be a suggestion
+        assert!(suggestions.iter().any(|s| s == "/help"));
+    }
+
+    #[test]
+    fn suggest_slash_commands_empty_input() {
+        let suggestions = suggest_slash_commands("");
+        // Should return something (all commands)
+        assert!(!suggestions.is_empty());
+    }
+}

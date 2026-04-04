@@ -137,3 +137,57 @@ pub(crate) fn resolve_cli_auth_source() -> Result<AuthSource, Box<dyn std::error
         Ok(config.oauth().cloned())
     })?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- default_oauth_config ---
+
+    #[test]
+    fn default_oauth_config_has_client_id() {
+        let config = default_oauth_config();
+        assert!(!config.client_id.is_empty());
+    }
+
+    #[test]
+    fn default_oauth_config_has_authorize_url() {
+        let config = default_oauth_config();
+        assert!(config.authorize_url.starts_with("https://"));
+    }
+
+    #[test]
+    fn default_oauth_config_has_token_url() {
+        let config = default_oauth_config();
+        assert!(config.token_url.starts_with("https://"));
+    }
+
+    #[test]
+    fn default_oauth_config_scopes_not_empty() {
+        let config = default_oauth_config();
+        assert!(!config.scopes.is_empty());
+    }
+
+    #[test]
+    fn default_oauth_config_scopes_contain_inference() {
+        let config = default_oauth_config();
+        assert!(config.scopes.iter().any(|s| s.contains("inference")));
+    }
+
+    #[test]
+    fn default_oauth_config_callback_port_is_none() {
+        let config = default_oauth_config();
+        assert!(config.callback_port.is_none());
+    }
+
+    #[test]
+    fn default_oauth_config_manual_redirect_is_none() {
+        let config = default_oauth_config();
+        assert!(config.manual_redirect_url.is_none());
+    }
+
+    #[test]
+    fn default_oauth_callback_port_value() {
+        assert_eq!(DEFAULT_OAUTH_CALLBACK_PORT, 4545);
+    }
+}
