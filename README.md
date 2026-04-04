@@ -1,10 +1,35 @@
+<div align="center">
+
 # ColotCook
 
-A production-ready AI coding agent written in pure Rust. ColotCook supports multiple AI providers and gives you a powerful CLI tool for AI-assisted development — right from your terminal.
+**A production-ready AI coding agent written in pure Rust.**
+
+Multi-provider support (Claude, GPT, Gemini, Grok, Ollama) · 19 built-in tools · Plugin system · MCP protocol · Sandbox isolation
 
 [![CI](https://github.com/tranhoangtu-it/ColotCook/actions/workflows/ci.yml/badge.svg)](https://github.com/tranhoangtu-it/ColotCook/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2021+-orange.svg)](https://www.rust-lang.org/)
+[![Tests](https://img.shields.io/badge/Tests-2000%2B-brightgreen.svg)](#code-quality)
+[![Coverage](https://img.shields.io/badge/Coverage-90%25-brightgreen.svg)](#code-quality)
+
+[Getting Started](#quick-start) · [Demo](#demo) · [Features](#features) · [Architecture](#architecture) · [Contributing](CONTRIBUTING.md)
+
+</div>
+
+---
+
+## Why ColotCook?
+
+| | ColotCook | Claude Code | Cursor | Aider |
+|---|---|---|---|---|
+| **Language** | Pure Rust (single binary) | Node.js | Electron | Python |
+| **Providers** | 5 (Claude, GPT, Gemini, Grok, Ollama) | Claude only | Multiple | Multiple |
+| **Local models** | Ollama built-in | No | No | Yes |
+| **MCP protocol** | Full support | Yes | No | No |
+| **Plugin system** | Hooks + lifecycle | Yes | No | No |
+| **Sandbox** | Linux namespaces | Yes | No | No |
+| **Open source** | MIT | Proprietary | Proprietary | Apache-2.0 |
+| **Install size** | ~15MB binary | ~200MB | ~500MB | ~50MB |
 
 ## Demo
 
@@ -284,6 +309,35 @@ cargo deny check
 | `unsafe` code | Forbidden workspace-wide |
 | CI pipeline | Format, Clippy, Test, Deny |
 
+## Roadmap
+
+- [ ] Interactive REPL mode with tab completion
+- [ ] Built-in RAG with codebase indexing
+- [ ] VS Code / Neovim extensions
+- [ ] Cross-compilation for Linux/Windows/macOS releases
+- [ ] Plugin marketplace
+- [ ] Multi-agent collaboration workflows
+- [ ] Voice input support
+- [ ] Custom tool SDK for third-party tools
+
+See [Discussions](https://github.com/tranhoangtu-it/ColotCook/discussions) for feature requests and ideas.
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
 ## License
 
 MIT
+
+---
+
+<div align="center">
+
+**If ColotCook helps your workflow, consider giving it a star!**
+
+[![Star on GitHub](https://img.shields.io/github/stars/tranhoangtu-it/ColotCook?style=social)](https://github.com/tranhoangtu-it/ColotCook)
+
+Built with Rust. Made in Vietnam.
+
+</div>
