@@ -357,7 +357,12 @@ mod tests {
 
     #[test]
     fn render_plugins_report_disabled_plugin() {
-        let plugins = vec![make_plugin_summary("my-plugin", "My Plugin", "2.0.0", false)];
+        let plugins = vec![make_plugin_summary(
+            "my-plugin",
+            "My Plugin",
+            "2.0.0",
+            false,
+        )];
         let result = render_plugins_report(&plugins);
         assert!(result.contains("disabled"));
     }
@@ -408,7 +413,9 @@ mod tests {
 
     #[test]
     fn definition_source_label_user_codex_home() {
-        assert!(DefinitionSource::UserCodexHome.label().contains("CODEX_HOME"));
+        assert!(DefinitionSource::UserCodexHome
+            .label()
+            .contains("CODEX_HOME"));
     }
 
     // ── SkillOrigin::detail_label ────────────────────────────────────────────

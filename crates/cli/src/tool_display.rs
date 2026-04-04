@@ -480,7 +480,8 @@ mod tests {
 
     #[test]
     fn format_tool_result_bash_success_shows_stdout() {
-        let output = r#"{"stdout": "hello world", "stderr": "", "returnCodeInterpretation": "success"}"#;
+        let output =
+            r#"{"stdout": "hello world", "stderr": "", "returnCodeInterpretation": "success"}"#;
         let result = format_tool_result("bash", output, false);
         assert!(result.contains("hello world"));
     }

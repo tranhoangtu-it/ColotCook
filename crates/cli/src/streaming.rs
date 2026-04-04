@@ -1493,17 +1493,23 @@ mod tests {
 
     #[test]
     fn tool_prog_read_file_alias() {
-        assert!(describe_tool_progress("read_file", r#"{"file_path":"lib.rs"}"#).contains("reading"));
+        assert!(
+            describe_tool_progress("read_file", r#"{"file_path":"lib.rs"}"#).contains("reading")
+        );
     }
 
     #[test]
     fn tool_prog_write_file_alias() {
-        assert!(describe_tool_progress("write_file", r#"{"file_path":"out.txt"}"#).contains("writing"));
+        assert!(
+            describe_tool_progress("write_file", r#"{"file_path":"out.txt"}"#).contains("writing")
+        );
     }
 
     #[test]
     fn tool_prog_edit_file_alias() {
-        assert!(describe_tool_progress("edit_file", r#"{"file_path":"main.rs"}"#).contains("editing"));
+        assert!(
+            describe_tool_progress("edit_file", r#"{"file_path":"main.rs"}"#).contains("editing")
+        );
     }
 
     #[test]
@@ -1607,7 +1613,9 @@ mod tests {
         let r = convert_messages(&[msg(
             MessageRole::Assistant,
             vec![
-                ContentBlock::Text { text: "text".into() },
+                ContentBlock::Text {
+                    text: "text".into(),
+                },
                 ContentBlock::ToolUse {
                     id: "t1".into(),
                     name: "bash".into(),
@@ -1781,9 +1789,7 @@ mod tests {
         assert!(events
             .iter()
             .any(|e| matches!(e, AssistantEvent::MessageStop)));
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, AssistantEvent::Usage(_))));
+        assert!(events.iter().any(|e| matches!(e, AssistantEvent::Usage(_))));
     }
 
     #[test]

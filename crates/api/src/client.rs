@@ -204,8 +204,8 @@ pub fn read_ollama_base_url() -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::providers::{detect_provider_kind, resolve_model_alias, ProviderKind};
     use super::*;
+    use crate::providers::{detect_provider_kind, resolve_model_alias, ProviderKind};
 
     #[test]
     fn resolves_existing_and_grok_aliases() {
@@ -244,9 +244,15 @@ mod tests {
 
     #[test]
     fn detect_provider_kind_for_all_providers() {
-        assert_eq!(detect_provider_kind("claude-haiku-3"), ProviderKind::Anthropic);
+        assert_eq!(
+            detect_provider_kind("claude-haiku-3"),
+            ProviderKind::Anthropic
+        );
         assert_eq!(detect_provider_kind("gpt-3.5-turbo"), ProviderKind::OpenAi);
-        assert_eq!(detect_provider_kind("gemini-1.5-flash"), ProviderKind::Gemini);
+        assert_eq!(
+            detect_provider_kind("gemini-1.5-flash"),
+            ProviderKind::Gemini
+        );
         assert_eq!(detect_provider_kind("grok-beta"), ProviderKind::Xai);
     }
 
@@ -276,8 +282,8 @@ mod tests {
 
     #[test]
     fn provider_client_with_prompt_cache_returns_same_kind() {
-        use crate::providers::anthropic::AuthSource;
         use crate::prompt_cache::PromptCache;
+        use crate::providers::anthropic::AuthSource;
         let client = ProviderClient::from_model_with_anthropic_auth(
             "claude-sonnet-4-6",
             Some(AuthSource::ApiKey("test-key".to_string())),

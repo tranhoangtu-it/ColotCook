@@ -691,12 +691,18 @@ mod tests {
 
     #[test]
     fn cli_output_format_parse_text() {
-        assert_eq!(CliOutputFormat::parse("text").unwrap(), CliOutputFormat::Text);
+        assert_eq!(
+            CliOutputFormat::parse("text").unwrap(),
+            CliOutputFormat::Text
+        );
     }
 
     #[test]
     fn cli_output_format_parse_json() {
-        assert_eq!(CliOutputFormat::parse("json").unwrap(), CliOutputFormat::Json);
+        assert_eq!(
+            CliOutputFormat::parse("json").unwrap(),
+            CliOutputFormat::Json
+        );
     }
 
     #[test]
@@ -715,17 +721,26 @@ mod tests {
 
     #[test]
     fn permission_mode_from_label_read_only() {
-        assert_eq!(permission_mode_from_label("read-only"), PermissionMode::ReadOnly);
+        assert_eq!(
+            permission_mode_from_label("read-only"),
+            PermissionMode::ReadOnly
+        );
     }
 
     #[test]
     fn permission_mode_from_label_workspace_write() {
-        assert_eq!(permission_mode_from_label("workspace-write"), PermissionMode::WorkspaceWrite);
+        assert_eq!(
+            permission_mode_from_label("workspace-write"),
+            PermissionMode::WorkspaceWrite
+        );
     }
 
     #[test]
     fn permission_mode_from_label_danger() {
-        assert_eq!(permission_mode_from_label("danger-full-access"), PermissionMode::DangerFullAccess);
+        assert_eq!(
+            permission_mode_from_label("danger-full-access"),
+            PermissionMode::DangerFullAccess
+        );
     }
 
     #[test]
@@ -872,18 +887,29 @@ mod tests {
 
     #[test]
     fn parse_args_output_format_flag() {
-        let action = parse_args(&["--output-format".into(), "json".into(), "-p".into(), "hi".into()]).unwrap();
+        let action = parse_args(&[
+            "--output-format".into(),
+            "json".into(),
+            "-p".into(),
+            "hi".into(),
+        ])
+        .unwrap();
         match action {
-            CliAction::Prompt { output_format, .. } => assert_eq!(output_format, CliOutputFormat::Json),
+            CliAction::Prompt { output_format, .. } => {
+                assert_eq!(output_format, CliOutputFormat::Json)
+            }
             _ => panic!("expected Prompt"),
         }
     }
 
     #[test]
     fn parse_args_output_format_equals() {
-        let action = parse_args(&["--output-format=json".into(), "-p".into(), "hi".into()]).unwrap();
+        let action =
+            parse_args(&["--output-format=json".into(), "-p".into(), "hi".into()]).unwrap();
         match action {
-            CliAction::Prompt { output_format, .. } => assert_eq!(output_format, CliOutputFormat::Json),
+            CliAction::Prompt { output_format, .. } => {
+                assert_eq!(output_format, CliOutputFormat::Json)
+            }
             _ => panic!("expected Prompt"),
         }
     }
@@ -892,7 +918,9 @@ mod tests {
     fn parse_args_permission_mode_flag() {
         let action = parse_args(&["--permission-mode".into(), "read-only".into()]).unwrap();
         match action {
-            CliAction::Repl { permission_mode, .. } => assert_eq!(permission_mode, PermissionMode::ReadOnly),
+            CliAction::Repl {
+                permission_mode, ..
+            } => assert_eq!(permission_mode, PermissionMode::ReadOnly),
             _ => panic!("expected Repl"),
         }
     }
@@ -901,7 +929,9 @@ mod tests {
     fn parse_args_permission_mode_equals() {
         let action = parse_args(&["--permission-mode=workspace-write".into()]).unwrap();
         match action {
-            CliAction::Repl { permission_mode, .. } => assert_eq!(permission_mode, PermissionMode::WorkspaceWrite),
+            CliAction::Repl {
+                permission_mode, ..
+            } => assert_eq!(permission_mode, PermissionMode::WorkspaceWrite),
             _ => panic!("expected Repl"),
         }
     }
@@ -910,7 +940,9 @@ mod tests {
     fn parse_args_dangerously_skip_permissions() {
         let action = parse_args(&["--dangerously-skip-permissions".into()]).unwrap();
         match action {
-            CliAction::Repl { permission_mode, .. } => assert_eq!(permission_mode, PermissionMode::DangerFullAccess),
+            CliAction::Repl {
+                permission_mode, ..
+            } => assert_eq!(permission_mode, PermissionMode::DangerFullAccess),
             _ => panic!("expected Repl"),
         }
     }
@@ -1094,7 +1126,10 @@ mod tests {
     fn parse_resume_args_empty() {
         let action = parse_resume_args(&[]).unwrap();
         match action {
-            CliAction::ResumeSession { session_path, commands } => {
+            CliAction::ResumeSession {
+                session_path,
+                commands,
+            } => {
                 assert_eq!(session_path, PathBuf::from(LATEST_SESSION_REFERENCE));
                 assert!(commands.is_empty());
             }

@@ -583,8 +583,8 @@ pub(crate) fn permission_policy(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use colotcook_runtime::HookProgressReporter;
+    use std::path::PathBuf;
 
     // --- resolve_plugin_path ---
 
@@ -617,7 +617,10 @@ mod tests {
         let cwd = PathBuf::from("/home/user/project");
         let config_home = PathBuf::from("/home/user/.config");
         let result = resolve_plugin_path(&cwd, &config_home, "plugins/my-plugin");
-        assert_eq!(result, PathBuf::from("/home/user/.config/plugins/my-plugin"));
+        assert_eq!(
+            result,
+            PathBuf::from("/home/user/.config/plugins/my-plugin")
+        );
     }
 
     #[test]

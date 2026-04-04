@@ -1359,13 +1359,19 @@ mod tests {
 
     #[test]
     fn format_status_report_contains_model() {
-        let result = format_status_report("opus", test_usage(), "read-only", &test_status_context());
+        let result =
+            format_status_report("opus", test_usage(), "read-only", &test_status_context());
         assert!(result.contains("opus"));
     }
 
     #[test]
     fn format_status_report_contains_permission_mode() {
-        let result = format_status_report("opus", test_usage(), "workspace-write", &test_status_context());
+        let result = format_status_report(
+            "opus",
+            test_usage(),
+            "workspace-write",
+            &test_status_context(),
+        );
         assert!(result.contains("workspace-write"));
     }
 

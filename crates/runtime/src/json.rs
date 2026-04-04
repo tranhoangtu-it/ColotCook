@@ -330,7 +330,7 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{render_string, JsonValue, JsonError};
+    use super::{render_string, JsonError, JsonValue};
     use std::collections::BTreeMap;
 
     #[test]
@@ -523,7 +523,10 @@ mod tests {
     fn parse_object_with_string_value() {
         let v = JsonValue::parse("{\"key\":\"value\"}").unwrap();
         let obj = v.as_object().unwrap();
-        assert_eq!(obj.get("key"), Some(&JsonValue::String("value".to_string())));
+        assert_eq!(
+            obj.get("key"),
+            Some(&JsonValue::String("value".to_string()))
+        );
     }
 
     #[test]
@@ -702,7 +705,10 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert("num".to_string(), JsonValue::Number(-42));
         map.insert("flag".to_string(), JsonValue::Bool(false));
-        map.insert("text".to_string(), JsonValue::String("hello\nworld".to_string()));
+        map.insert(
+            "text".to_string(),
+            JsonValue::String("hello\nworld".to_string()),
+        );
         map.insert("null_val".to_string(), JsonValue::Null);
         let original = JsonValue::Object(map);
         let rendered = original.render();

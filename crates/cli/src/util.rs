@@ -546,7 +546,10 @@ mod tests {
     fn parse_titled_body_valid_input() {
         let input = "TITLE: My Title\nBODY: My body text";
         let result = parse_titled_body(input);
-        assert_eq!(result, Some(("My Title".to_string(), "My body text".to_string())));
+        assert_eq!(
+            result,
+            Some(("My Title".to_string(), "My body text".to_string()))
+        );
     }
 
     #[test]

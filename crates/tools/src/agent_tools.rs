@@ -1815,7 +1815,10 @@ mod tests {
     #[test]
     fn subagent_tool_executor_allows_allowed_tool() {
         let mut executor = SubagentToolExecutor::new(
-            ["bash", "read_file"].iter().map(|s| s.to_string()).collect(),
+            ["bash", "read_file"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         );
         // bash with valid input should be executed (may fail due to actual tool execution,
         // but it should pass the permission check)
@@ -1872,7 +1875,8 @@ mod tests {
 
     #[test]
     fn format_agent_terminal_output_with_both_result_and_error() {
-        let output = format_agent_terminal_output("failed", Some("partial output"), Some("error msg"));
+        let output =
+            format_agent_terminal_output("failed", Some("partial output"), Some("error msg"));
         assert!(output.contains("partial output"));
         assert!(output.contains("error msg"));
         assert!(output.contains("failed"));
@@ -2038,9 +2042,7 @@ mod tests {
         assert!(events
             .iter()
             .any(|e| matches!(e, AssistantEvent::MessageStop)));
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, AssistantEvent::Usage(_))));
+        assert!(events.iter().any(|e| matches!(e, AssistantEvent::Usage(_))));
     }
 
     #[test]

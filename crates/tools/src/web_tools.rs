@@ -427,13 +427,19 @@ mod tests {
     #[test]
     fn normalize_fetch_url_http_upgraded_to_https() {
         let url = normalize_fetch_url("http://example.com/").unwrap();
-        assert!(url.starts_with("https://"), "expected https upgrade, got: {url}");
+        assert!(
+            url.starts_with("https://"),
+            "expected https upgrade, got: {url}"
+        );
     }
 
     #[test]
     fn normalize_fetch_url_http_localhost_stays_http() {
         let url = normalize_fetch_url("http://localhost:8080/").unwrap();
-        assert!(url.starts_with("http://"), "localhost should stay http, got: {url}");
+        assert!(
+            url.starts_with("http://"),
+            "localhost should stay http, got: {url}"
+        );
     }
 
     #[test]
@@ -470,7 +476,10 @@ mod tests {
 
     #[test]
     fn build_search_url_env_override() {
-        std::env::set_var("COLOTCOOK_WEB_SEARCH_BASE_URL", "https://mysearch.example.com/");
+        std::env::set_var(
+            "COLOTCOOK_WEB_SEARCH_BASE_URL",
+            "https://mysearch.example.com/",
+        );
         let url = build_search_url("my query").unwrap();
         assert_eq!(url.host_str(), Some("mysearch.example.com"));
         std::env::remove_var("COLOTCOOK_WEB_SEARCH_BASE_URL");

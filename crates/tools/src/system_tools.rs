@@ -792,8 +792,7 @@ mod tests {
 
     #[test]
     fn write_and_read_plan_mode_state_roundtrip() {
-        let path =
-            std::env::temp_dir().join("colotcook-test-plan-state.json");
+        let path = std::env::temp_dir().join("colotcook-test-plan-state.json");
         let state = PlanModeState {
             had_local_override: true,
             previous_local_mode: Some(json!("default")),
@@ -815,8 +814,7 @@ mod tests {
 
     #[test]
     fn clear_plan_mode_state_missing_file_ok() {
-        let path =
-            std::path::Path::new("/tmp/colotcook-test-plan-clear-nonexistent.json");
+        let path = std::path::Path::new("/tmp/colotcook-test-plan-clear-nonexistent.json");
         let result = clear_plan_mode_state(path);
         assert!(result.is_ok());
     }

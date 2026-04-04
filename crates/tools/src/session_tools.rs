@@ -219,17 +219,20 @@ mod tests {
     }
 
     // --- todo_store_path ---
+    static TODO_STORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn todo_store_path_env_override() {
+        let _lock = TODO_STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("COLOTCOOK_TODO_STORE", "/tmp/my-todos.json");
         let path = todo_store_path().unwrap();
-        assert_eq!(path, std::path::PathBuf::from("/tmp/my-todos.json"));
         std::env::remove_var("COLOTCOOK_TODO_STORE");
+        assert_eq!(path, std::path::PathBuf::from("/tmp/my-todos.json"));
     }
 
     #[test]
     fn todo_store_path_default_uses_cwd() {
+        let _lock = TODO_STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var("COLOTCOOK_TODO_STORE");
         let path = todo_store_path().unwrap();
         assert!(

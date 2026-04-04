@@ -556,13 +556,19 @@ mod tests {
     #[test]
     fn filesystem_isolation_mode_as_str() {
         assert_eq!(FilesystemIsolationMode::Off.as_str(), "off");
-        assert_eq!(FilesystemIsolationMode::WorkspaceOnly.as_str(), "workspace-only");
+        assert_eq!(
+            FilesystemIsolationMode::WorkspaceOnly.as_str(),
+            "workspace-only"
+        );
         assert_eq!(FilesystemIsolationMode::AllowList.as_str(), "allow-list");
     }
 
     #[test]
     fn filesystem_isolation_mode_default_is_workspace_only() {
-        assert_eq!(FilesystemIsolationMode::default(), FilesystemIsolationMode::WorkspaceOnly);
+        assert_eq!(
+            FilesystemIsolationMode::default(),
+            FilesystemIsolationMode::WorkspaceOnly
+        );
     }
 
     #[test]
@@ -587,7 +593,10 @@ mod tests {
         // Default network_isolation = false
         assert!(!request.network_isolation);
         // Default filesystem_mode = WorkspaceOnly
-        assert_eq!(request.filesystem_mode, FilesystemIsolationMode::WorkspaceOnly);
+        assert_eq!(
+            request.filesystem_mode,
+            FilesystemIsolationMode::WorkspaceOnly
+        );
     }
 
     #[test]
@@ -708,13 +717,19 @@ mod tests {
     #[test]
     fn detect_container_from_kubernetes_env() {
         let env = detect_container_environment_from(super::SandboxDetectionInputs {
-            env_pairs: vec![("KUBERNETES_SERVICE_HOST".to_string(), "10.0.0.1".to_string())],
+            env_pairs: vec![(
+                "KUBERNETES_SERVICE_HOST".to_string(),
+                "10.0.0.1".to_string(),
+            )],
             dockerenv_exists: false,
             containerenv_exists: false,
             proc_1_cgroup: None,
         });
         assert!(env.in_container);
-        assert!(env.markers.iter().any(|m| m.contains("KUBERNETES_SERVICE_HOST")));
+        assert!(env
+            .markers
+            .iter()
+            .any(|m| m.contains("KUBERNETES_SERVICE_HOST")));
     }
 
     #[test]

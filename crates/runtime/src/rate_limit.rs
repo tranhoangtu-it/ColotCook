@@ -245,7 +245,7 @@ mod tests {
         assert_eq!(limiter.check_request(200), RateLimitDecision::Allowed);
         // Record actual usage that pushes us near limit
         limiter.record_usage(250); // total would be 200 + 250 = 450 recorded
-        // After recording, requesting 100 more should exceed the limit (450 + 100 > 500)
+                                   // After recording, requesting 100 more should exceed the limit (450 + 100 > 500)
         assert!(matches!(
             limiter.check_request(100),
             RateLimitDecision::RetryAfter(_)
@@ -291,7 +291,10 @@ mod tests {
     fn rate_limit_decision_debug_format() {
         let s = format!("{:?}", RateLimitDecision::Allowed);
         assert!(!s.is_empty());
-        let s2 = format!("{:?}", RateLimitDecision::RetryAfter(Duration::from_secs(1)));
+        let s2 = format!(
+            "{:?}",
+            RateLimitDecision::RetryAfter(Duration::from_secs(1))
+        );
         assert!(!s2.is_empty());
     }
 
