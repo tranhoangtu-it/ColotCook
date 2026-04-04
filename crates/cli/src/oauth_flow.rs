@@ -190,4 +190,44 @@ mod tests {
     fn default_oauth_callback_port_value() {
         assert_eq!(DEFAULT_OAUTH_CALLBACK_PORT, 4545);
     }
+
+    // --- default_oauth_config additional ---
+
+    #[test]
+    fn default_oauth_config_client_id_is_uuid_format() {
+        let config = default_oauth_config();
+        // Should be a UUID-like string with dashes
+        assert!(config.client_id.contains('-'));
+        assert_eq!(config.client_id.len(), 36);
+    }
+
+    #[test]
+    fn default_oauth_config_authorize_url_is_claude_platform() {
+        let config = default_oauth_config();
+        assert!(config.authorize_url.contains("platform.claude.com"));
+    }
+
+    #[test]
+    fn default_oauth_config_token_url_is_claude_platform() {
+        let config = default_oauth_config();
+        assert!(config.token_url.contains("platform.claude.com"));
+    }
+
+    #[test]
+    fn default_oauth_config_scopes_contain_profile() {
+        let config = default_oauth_config();
+        assert!(config.scopes.iter().any(|s| s.contains("profile")));
+    }
+
+    #[test]
+    fn default_oauth_config_scopes_contain_sessions() {
+        let config = default_oauth_config();
+        assert!(config.scopes.iter().any(|s| s.contains("sessions")));
+    }
+
+    #[test]
+    fn default_oauth_config_has_three_scopes() {
+        let config = default_oauth_config();
+        assert_eq!(config.scopes.len(), 3);
+    }
 }

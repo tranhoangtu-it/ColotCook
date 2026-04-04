@@ -1164,7 +1164,10 @@ mod tests {
     #[test]
     fn parse_git_status_branch_normal_branch() {
         let status = "## main...origin/main\nM  src/main.rs";
-        assert_eq!(parse_git_status_branch(Some(status)), Some("main".to_string()));
+        assert_eq!(
+            parse_git_status_branch(Some(status)),
+            Some("main".to_string())
+        );
     }
 
     #[test]
@@ -1310,6 +1313,575 @@ mod tests {
             normalize_permission_mode("  read-only  "),
             Some("read-only")
         );
+    }
+
+    // ── format_status_report ─────────────────────────────────────────────────
+
+    fn test_status_context() -> StatusContext {
+        StatusContext {
+            cwd: PathBuf::from("/home/user/project"),
+            session_path: Some(PathBuf::from("/tmp/session.jsonl")),
+            loaded_config_files: 2,
+            discovered_config_files: 3,
+            memory_file_count: 1,
+            project_root: Some(PathBuf::from("/home/user/project")),
+            git_branch: Some("main".to_string()),
+            git_summary: GitWorkspaceSummary {
+                changed_files: 5,
+                staged_files: 2,
+                unstaged_files: 3,
+                untracked_files: 0,
+                conflicted_files: 0,
+            },
+            sandbox_status: SandboxStatus::default(),
+        }
+    }
+
+    fn test_usage() -> StatusUsage {
+        StatusUsage {
+            message_count: 10,
+            turns: 3,
+            latest: TokenUsage {
+                input_tokens: 100,
+                output_tokens: 50,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+            },
+            cumulative: TokenUsage {
+                input_tokens: 500,
+                output_tokens: 200,
+                cache_creation_input_tokens: 10,
+                cache_read_input_tokens: 5,
+            },
+            estimated_tokens: 700,
+        }
+    }
+
+    #[test]
+    fn format_status_report_contains_model() {
+        let result = format_status_report("opus", test_usage(), "read-only", &test_status_context());
+        assert!(result.contains("opus"));
+    }
+
+    #[test]
+    fn format_status_report_contains_permission_mode() {
+        let result = format_status_report("opus", test_usage(), "workspace-write", &test_status_context());
+        assert!(result.contains("workspace-write"));
+    }
+
+    #[test]
+    fn format_status_report_contains_workspace_info() {
+        let result = format_status_report("m", test_usage(), "read-only", &test_status_context());
+        assert!(result.contains("/home/user/project"));
+        assert!(result.contains("main"));
+    }
+
+    #[test]
+    fn format_status_report_contains_usage_info() {
+        let result = format_status_report("m", test_usage(), "read-only", &test_status_context());
+        assert!(result.contains("10")); // message_count
+        assert!(result.contains("700")); // estimated_tokens
+    }
+
+    #[test]
+    fn format_status_report_no_project_root() {
+        let mut ctx = test_status_context();
+        ctx.project_root = None;
+        let result = format_status_report("m", test_usage(), "read-only", &ctx);
+        assert!(result.contains("unknown"));
+    }
+
+    #[test]
+    fn format_status_report_no_git_branch() {
+        let mut ctx = test_status_context();
+        ctx.git_branch = None;
+        let result = format_status_report("m", test_usage(), "read-only", &ctx);
+        assert!(result.contains("unknown"));
+    }
+
+    #[test]
+    fn format_status_report_no_session_path() {
+        let mut ctx = test_status_context();
+        ctx.session_path = None;
+        let result = format_status_report("m", test_usage(), "read-only", &ctx);
+        assert!(result.contains("live-repl"));
+    }
+
+    // ── format_commit_preflight_report ────────────────────────────────────
+
+    #[test]
+    fn format_commit_preflight_report_with_branch() {
+        let summary = GitWorkspaceSummary {
+            changed_files: 3,
+            staged_files: 2,
+            unstaged_files: 1,
+            untracked_files: 0,
+            conflicted_files: 0,
+        };
+        let result = format_commit_preflight_report(Some("main"), summary);
+        assert!(result.contains("main"));
+        assert!(result.contains("ready"));
+        assert!(result.contains("3"));
+    }
+
+    #[test]
+    fn format_commit_preflight_report_no_branch() {
+        let summary = GitWorkspaceSummary::default();
+        let result = format_commit_preflight_report(None, summary);
+        assert!(result.contains("unknown"));
+    }
+
+    // ── format_commit_skipped_report ──────────────────────────────────────
+
+    #[test]
+    fn format_commit_skipped_report_contains_skipped() {
+        let result = format_commit_skipped_report();
+        assert!(result.contains("skipped"));
+        assert!(result.contains("no workspace changes"));
+    }
+
+    // ── format_bughunter_report ──────────────────────────────────────────
+
+    #[test]
+    fn format_bughunter_report_with_scope() {
+        let result = format_bughunter_report(Some("src/main.rs"));
+        assert!(result.contains("src/main.rs"));
+        assert!(result.contains("Bughunter"));
+    }
+
+    #[test]
+    fn format_bughunter_report_no_scope() {
+        let result = format_bughunter_report(None);
+        assert!(result.contains("the current repository"));
+    }
+
+    // ── format_ultraplan_report ──────────────────────────────────────────
+
+    #[test]
+    fn format_ultraplan_report_with_task() {
+        let result = format_ultraplan_report(Some("implement auth"));
+        assert!(result.contains("implement auth"));
+        assert!(result.contains("Ultraplan"));
+    }
+
+    #[test]
+    fn format_ultraplan_report_no_task() {
+        let result = format_ultraplan_report(None);
+        assert!(result.contains("the current repo work"));
+    }
+
+    // ── format_pr_report ─────────────────────────────────────────────────
+
+    #[test]
+    fn format_pr_report_with_context() {
+        let result = format_pr_report("feature/auth", Some("add oauth support"));
+        assert!(result.contains("feature/auth"));
+        assert!(result.contains("add oauth support"));
+    }
+
+    #[test]
+    fn format_pr_report_no_context() {
+        let result = format_pr_report("main", None);
+        assert!(result.contains("main"));
+        assert!(result.contains("none"));
+    }
+
+    // ── format_issue_report ──────────────────────────────────────────────
+
+    #[test]
+    fn format_issue_report_with_context() {
+        let result = format_issue_report(Some("login button broken"));
+        assert!(result.contains("login button broken"));
+    }
+
+    #[test]
+    fn format_issue_report_no_context() {
+        let result = format_issue_report(None);
+        assert!(result.contains("none"));
+    }
+
+    // ── format_resume_report ─────────────────────────────────────────────
+
+    #[test]
+    fn format_resume_report_contains_session_path() {
+        let result = format_resume_report("/tmp/session.jsonl", 5, 2);
+        assert!(result.contains("/tmp/session.jsonl"));
+        assert!(result.contains("5"));
+        assert!(result.contains("2"));
+    }
+
+    // ── render_resume_usage ──────────────────────────────────────────────
+
+    #[test]
+    fn render_resume_usage_contains_usage_section() {
+        let result = render_resume_usage();
+        assert!(result.contains("Resume"));
+        assert!(result.contains("/resume"));
+    }
+
+    // ── format_auto_compaction_notice ─────────────────────────────────────
+
+    #[test]
+    fn format_auto_compaction_notice_contains_count() {
+        let result = format_auto_compaction_notice(42);
+        assert!(result.contains("42"));
+        assert!(result.contains("auto-compacted"));
+    }
+
+    // ── validate_no_args ──────────────────────────────────────────────────
+
+    #[test]
+    fn validate_no_args_none_ok() {
+        assert!(validate_no_args("/status", None).is_ok());
+    }
+
+    #[test]
+    fn validate_no_args_empty_ok() {
+        assert!(validate_no_args("/status", Some("")).is_ok());
+    }
+
+    #[test]
+    fn validate_no_args_whitespace_ok() {
+        assert!(validate_no_args("/status", Some("   ")).is_ok());
+    }
+
+    #[test]
+    fn validate_no_args_with_args_errors() {
+        let result = validate_no_args("/status", Some("extra"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("/status"));
+    }
+
+    // ── render_last_tool_debug_report ─────────────────────────────────────
+
+    #[test]
+    fn render_last_tool_debug_report_no_tool_errors() {
+        use colotcook_runtime::Session;
+        let session = Session::default();
+        let result = render_last_tool_debug_report(&session);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn render_last_tool_debug_report_with_tool_use() {
+        use colotcook_runtime::{ContentBlock, ConversationMessage, MessageRole, Session};
+        let mut session = Session::default();
+        session.messages.push(ConversationMessage {
+            role: MessageRole::Assistant,
+            blocks: vec![ContentBlock::ToolUse {
+                id: "t1".into(),
+                name: "bash".into(),
+                input: r#"{"command":"ls"}"#.into(),
+            }],
+            usage: None,
+        });
+        let result = render_last_tool_debug_report(&session).unwrap();
+        assert!(result.contains("bash"));
+        assert!(result.contains("t1"));
+        assert!(result.contains("missing tool result"));
+    }
+
+    #[test]
+    fn render_last_tool_debug_report_with_tool_result() {
+        use colotcook_runtime::{ContentBlock, ConversationMessage, MessageRole, Session};
+        let mut session = Session::default();
+        session.messages.push(ConversationMessage {
+            role: MessageRole::Assistant,
+            blocks: vec![ContentBlock::ToolUse {
+                id: "t1".into(),
+                name: "bash".into(),
+                input: r#"{"command":"ls"}"#.into(),
+            }],
+            usage: None,
+        });
+        session.messages.push(ConversationMessage {
+            role: MessageRole::Tool,
+            blocks: vec![ContentBlock::ToolResult {
+                tool_use_id: "t1".into(),
+                tool_name: "bash".into(),
+                output: "file1.txt\nfile2.txt".into(),
+                is_error: false,
+            }],
+            usage: None,
+        });
+        let result = render_last_tool_debug_report(&session).unwrap();
+        assert!(result.contains("bash"));
+        assert!(result.contains("ok"));
+        assert!(result.contains("file1.txt"));
+    }
+
+    #[test]
+    fn render_last_tool_debug_report_with_error_result() {
+        use colotcook_runtime::{ContentBlock, ConversationMessage, MessageRole, Session};
+        let mut session = Session::default();
+        session.messages.push(ConversationMessage {
+            role: MessageRole::Assistant,
+            blocks: vec![ContentBlock::ToolUse {
+                id: "t1".into(),
+                name: "bash".into(),
+                input: "{}".into(),
+            }],
+            usage: None,
+        });
+        session.messages.push(ConversationMessage {
+            role: MessageRole::Tool,
+            blocks: vec![ContentBlock::ToolResult {
+                tool_use_id: "t1".into(),
+                tool_name: "bash".into(),
+                output: "command not found".into(),
+                is_error: true,
+            }],
+            usage: None,
+        });
+        let result = render_last_tool_debug_report(&session).unwrap();
+        assert!(result.contains("error"));
+    }
+
+    // ── render_export_text ────────────────────────────────────────────────
+
+    #[test]
+    fn render_export_text_with_messages() {
+        use colotcook_runtime::{ContentBlock, ConversationMessage, MessageRole, Session};
+        let mut session = Session::default();
+        session.messages.push(ConversationMessage {
+            role: MessageRole::User,
+            blocks: vec![ContentBlock::Text {
+                text: "Hello".into(),
+            }],
+            usage: None,
+        });
+        session.messages.push(ConversationMessage {
+            role: MessageRole::Assistant,
+            blocks: vec![ContentBlock::Text {
+                text: "Hi there!".into(),
+            }],
+            usage: None,
+        });
+        let result = render_export_text(&session);
+        assert!(result.contains("user"));
+        assert!(result.contains("assistant"));
+        assert!(result.contains("Hello"));
+        assert!(result.contains("Hi there!"));
+    }
+
+    #[test]
+    fn render_export_text_with_tool_blocks() {
+        use colotcook_runtime::{ContentBlock, ConversationMessage, MessageRole, Session};
+        let mut session = Session::default();
+        session.messages.push(ConversationMessage {
+            role: MessageRole::Assistant,
+            blocks: vec![ContentBlock::ToolUse {
+                id: "t1".into(),
+                name: "bash".into(),
+                input: r#"{"command":"ls"}"#.into(),
+            }],
+            usage: None,
+        });
+        session.messages.push(ConversationMessage {
+            role: MessageRole::Tool,
+            blocks: vec![ContentBlock::ToolResult {
+                tool_use_id: "t1".into(),
+                tool_name: "bash".into(),
+                output: "file.txt".into(),
+                is_error: false,
+            }],
+            usage: None,
+        });
+        let result = render_export_text(&session);
+        assert!(result.contains("[tool_use"));
+        assert!(result.contains("[tool_result"));
+    }
+
+    // ── default_export_filename ───────────────────────────────────────────
+
+    #[test]
+    fn default_export_filename_special_chars() {
+        use colotcook_runtime::{ContentBlock, ConversationMessage, MessageRole, Session};
+        let mut session = Session::default();
+        session.messages.push(ConversationMessage {
+            role: MessageRole::User,
+            blocks: vec![ContentBlock::Text {
+                text: "Fix the @#$ bug!!!".into(),
+            }],
+            usage: None,
+        });
+        let result = default_export_filename(&session);
+        assert!(result.ends_with(".txt"));
+        // Should not contain special chars
+        assert!(!result.contains('@'));
+        assert!(!result.contains('#'));
+    }
+
+    // ── format_unknown_slash_command_message ──────────────────────────────
+
+    #[test]
+    fn format_unknown_slash_command_no_suggestions() {
+        let result = format_unknown_slash_command_message("xyznonexistent");
+        assert!(result.contains("unknown slash command"));
+        assert!(result.contains("/help"));
+    }
+
+    #[test]
+    fn format_unknown_slash_command_with_suggestions() {
+        // "statu" is close to "status"
+        let result = format_unknown_slash_command_message("statu");
+        assert!(result.contains("unknown slash command"));
+    }
+
+    // ── GitWorkspaceSummary ──────────────────────────────────────────────
+
+    #[test]
+    fn git_workspace_summary_headline_with_untracked() {
+        let summary = GitWorkspaceSummary {
+            changed_files: 2,
+            staged_files: 0,
+            unstaged_files: 0,
+            untracked_files: 2,
+            conflicted_files: 0,
+        };
+        let headline = summary.headline();
+        assert!(headline.contains("2 untracked"));
+    }
+
+    #[test]
+    fn git_workspace_summary_headline_with_conflicts() {
+        let summary = GitWorkspaceSummary {
+            changed_files: 1,
+            staged_files: 0,
+            unstaged_files: 0,
+            untracked_files: 0,
+            conflicted_files: 1,
+        };
+        let headline = summary.headline();
+        assert!(headline.contains("1 conflicted"));
+    }
+
+    // ── parse_git_workspace_summary additional ───────────────────────────
+
+    #[test]
+    fn parse_git_workspace_summary_conflicted_files() {
+        let status = "## main\nUU conflicted.rs";
+        let summary = parse_git_workspace_summary(Some(status));
+        assert_eq!(summary.conflicted_files, 1);
+    }
+
+    #[test]
+    fn parse_git_workspace_summary_empty_lines_skipped() {
+        let status = "## main\n\nM  file.rs\n\n";
+        let summary = parse_git_workspace_summary(Some(status));
+        assert_eq!(summary.changed_files, 1);
+    }
+
+    #[test]
+    fn parse_git_workspace_summary_staged_only() {
+        let status = "## main\nA  new.rs";
+        let summary = parse_git_workspace_summary(Some(status));
+        assert_eq!(summary.staged_files, 1);
+        assert_eq!(summary.unstaged_files, 0);
+    }
+
+    #[test]
+    fn parse_git_workspace_summary_unstaged_only() {
+        let status = "## main\n M modified.rs";
+        let summary = parse_git_workspace_summary(Some(status));
+        assert_eq!(summary.staged_files, 0);
+        assert_eq!(summary.unstaged_files, 1);
+    }
+
+    // ── parse_git_status_branch additional ───────────────────────────────
+
+    #[test]
+    fn parse_git_status_branch_empty_branch() {
+        let status = "## ";
+        assert!(parse_git_status_branch(Some(status)).is_none());
+    }
+
+    #[test]
+    fn parse_git_status_branch_no_header() {
+        let status = "M  src/main.rs";
+        assert!(parse_git_status_branch(Some(status)).is_none());
+    }
+
+    // ── format_sandbox_report additional ─────────────────────────────────
+
+    #[test]
+    fn format_sandbox_report_with_container_markers() {
+        let mut status = SandboxStatus::default();
+        status.container_markers = vec!["docker".to_string(), "k8s".to_string()];
+        let result = format_sandbox_report(&status);
+        assert!(result.contains("docker"));
+        assert!(result.contains("k8s"));
+    }
+
+    #[test]
+    fn format_sandbox_report_enabled_and_active() {
+        let mut status = SandboxStatus::default();
+        status.enabled = true;
+        status.active = true;
+        let result = format_sandbox_report(&status);
+        assert!(result.contains("true"));
+    }
+
+    // ── format_permissions_report additional ──────────────────────────────
+
+    #[test]
+    fn format_permissions_report_danger_mode() {
+        let result = format_permissions_report("danger-full-access");
+        assert!(result.contains("● current"));
+        assert!(result.contains("danger-full-access"));
+    }
+
+    // ── format_cost_report additional ────────────────────────────────────
+
+    #[test]
+    fn format_cost_report_large_numbers() {
+        let usage = TokenUsage {
+            input_tokens: 1_000_000,
+            output_tokens: 500_000,
+            cache_creation_input_tokens: 100_000,
+            cache_read_input_tokens: 50_000,
+        };
+        let result = format_cost_report(usage);
+        assert!(result.contains("1000000"));
+        assert!(result.contains("500000"));
+    }
+
+    // ── render_repl_help ─────────────────────────────────────────────────
+
+    #[test]
+    fn render_repl_help_contains_exit() {
+        let result = render_repl_help();
+        assert!(result.contains("/exit"));
+        assert!(result.contains("/quit"));
+    }
+
+    #[test]
+    fn render_repl_help_contains_keyboard_shortcuts() {
+        let result = render_repl_help();
+        assert!(result.contains("Ctrl-C"));
+        assert!(result.contains("Tab"));
+    }
+
+    // ── render_diff_report_for ───────────────────────────────────────────
+
+    #[test]
+    fn render_diff_report_for_temp_dir_clean() {
+        let dir = std::env::temp_dir().join("colotcook-diff-test-clean");
+        let _ = std::fs::create_dir_all(&dir);
+        // Init a git repo
+        let _ = std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&dir)
+            .output();
+        let _ = std::process::Command::new("git")
+            .args(["commit", "--allow-empty", "-m", "init"])
+            .current_dir(&dir)
+            .output();
+        let result = render_diff_report_for(&dir);
+        if let Ok(report) = result {
+            assert!(report.contains("clean") || report.contains("Diff"));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

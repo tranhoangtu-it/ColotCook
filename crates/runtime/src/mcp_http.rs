@@ -900,4 +900,262 @@ mod tests {
         };
         assert!(!McpOAuthTokenManager::is_token_expired(&no_expiry));
     }
+
+    // --- McpHttpClient construction ---
+
+    #[test]
+    fn creates_http_client_with_custom_headers() {
+        let mut headers = BTreeMap::new();
+        headers.insert("Authorization".to_string(), "Bearer test-token".to_string());
+        headers.insert("X-Custom".to_string(), "custom-value".to_string());
+        let transport = McpRemoteTransport {
+            url: "http://example.com/mcp".to_string(),
+            headers,
+            headers_helper: None,
+            auth: McpClientAuth::None,
+        };
+        let client = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(McpHttpClient::new("header-server", &transport))
+            .unwrap();
+        assert_eq!(client.headers.len(), 2);
+        assert_eq!(client.headers.get("X-Custom").unwrap(), "custom-value");
+    }
+
+    #[test]
+    fn creates_http_client_with_empty_headers() {
+        let transport = McpRemoteTransport {
+            url: "http://example.com/mcp".to_string(),
+            headers: BTreeMap::new(),
+            headers_helper: None,
+            auth: McpClientAuth::None,
+        };
+        let client = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(McpHttpClient::new("no-header-server", &transport))
+            .unwrap();
+        assert!(client.headers.is_empty());
+        assert!(client.token_manager.is_none());
+    }
+
+    #[test]
+    fn creates_http_client_oauth_no_client_id() {
+        let oauth_config = McpOAuthConfig {
+            client_id: None,
+            callback_port: None,
+            auth_server_metadata_url: None,
+            xaa: None,
+        };
+        let transport = McpRemoteTransport {
+            url: "http://example.com/mcp".to_string(),
+            headers: BTreeMap::new(),
+            headers_helper: None,
+            auth: McpClientAuth::OAuth(oauth_config),
+        };
+        let client = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(McpHttpClient::new("no-clientid-server", &transport))
+            .unwrap();
+        // Without client_id, token_manager should be None
+        assert!(client.token_manager.is_none());
+    }
+
+    // --- is_token_expired edge cases ---
+
+    #[test]
+    fn token_expired_exactly_at_buffer() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let token = OAuthTokenSet {
+            access_token: "t".to_string(),
+            refresh_token: None,
+            expires_at: Some(now + TOKEN_EXPIRY_BUFFER_SECS),
+            scopes: vec![],
+        };
+        // Exactly at buffer boundary should be expired
+        assert!(McpOAuthTokenManager::is_token_expired(&token));
+    }
+
+    #[test]
+    fn token_not_expired_just_past_buffer() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let token = OAuthTokenSet {
+            access_token: "t".to_string(),
+            refresh_token: None,
+            expires_at: Some(now + TOKEN_EXPIRY_BUFFER_SECS + 1),
+            scopes: vec![],
+        };
+        assert!(!McpOAuthTokenManager::is_token_expired(&token));
+    }
+
+    #[test]
+    fn token_expired_far_in_past() {
+        let token = OAuthTokenSet {
+            access_token: "t".to_string(),
+            refresh_token: None,
+            expires_at: Some(0), // Unix epoch
+            scopes: vec![],
+        };
+        assert!(McpOAuthTokenManager::is_token_expired(&token));
+    }
+
+    #[test]
+    fn token_valid_far_in_future() {
+        let token = OAuthTokenSet {
+            access_token: "t".to_string(),
+            refresh_token: None,
+            expires_at: Some(u64::MAX - 100),
+            scopes: vec![],
+        };
+        assert!(!McpOAuthTokenManager::is_token_expired(&token));
+    }
+
+    // --- SseEvent additional ---
+
+    #[test]
+    fn sse_event_debug_impl() {
+        let event = SseEvent {
+            event_type: Some("message".into()),
+            data: "test".into(),
+            id: None,
+        };
+        let debug = format!("{event:?}");
+        assert!(debug.contains("message"));
+    }
+
+    // --- McpSseMessage additional ---
+
+    #[test]
+    fn mcp_sse_message_debug_impl() {
+        let msg = McpSseMessage::Error("test error".into());
+        let debug = format!("{msg:?}");
+        assert!(debug.contains("Error"));
+    }
+
+    #[test]
+    fn mcp_sse_message_all_variants() {
+        let variants = vec![
+            McpSseMessage::Endpoint("/test".into()),
+            McpSseMessage::Message("{}".into()),
+            McpSseMessage::Ping,
+            McpSseMessage::Error("err".into()),
+        ];
+        for v in &variants {
+            let _ = format!("{v:?}");
+        }
+    }
+
+    // --- parse_sse_events additional ---
+
+    #[test]
+    fn parse_sse_multiple_data_lines_with_event_type() {
+        let raw = "event: message\ndata: line1\ndata: line2\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type.as_deref(), Some("message"));
+        assert_eq!(events[0].data, "line1\nline2");
+    }
+
+    #[test]
+    fn parse_sse_id_and_data_combined() {
+        let raw = "id: 42\nevent: endpoint\ndata: /session/abc\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].id.as_deref(), Some("42"));
+        assert_eq!(events[0].event_type.as_deref(), Some("endpoint"));
+        assert_eq!(events[0].data, "/session/abc");
+    }
+
+    #[test]
+    fn parse_sse_multiple_events_with_ids() {
+        let raw = "id: 1\ndata: first\n\nid: 2\ndata: second\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].id.as_deref(), Some("1"));
+        assert_eq!(events[1].id.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn parse_sse_comment_between_events() {
+        let raw = "data: first\n\n: keepalive\n\ndata: second\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 2);
+    }
+
+    #[test]
+    fn parse_sse_no_dispatch_without_data() {
+        let raw = "event: ping\n\n";
+        let events = parse_sse_events(raw);
+        // No data means no dispatch
+        assert_eq!(events.len(), 0);
+    }
+
+    // --- classify_mcp_sse_events additional ---
+
+    #[test]
+    fn classify_multiple_messages() {
+        let events = vec![
+            SseEvent {
+                event_type: Some("message".into()),
+                data: "{}".into(),
+                id: None,
+            },
+            SseEvent {
+                event_type: Some("message".into()),
+                data: "{\"result\":\"ok\"}".into(),
+                id: None,
+            },
+        ];
+        let classified = classify_mcp_sse_events(&events);
+        assert_eq!(classified.len(), 2);
+        assert!(matches!(&classified[0], McpSseMessage::Message(_)));
+        assert!(matches!(&classified[1], McpSseMessage::Message(_)));
+    }
+
+    #[test]
+    fn classify_mixed_events() {
+        let events = vec![
+            SseEvent {
+                event_type: Some("endpoint".into()),
+                data: "/session/123".into(),
+                id: None,
+            },
+            SseEvent {
+                event_type: Some("ping".into()),
+                data: "".into(),
+                id: None,
+            },
+            SseEvent {
+                event_type: Some("error".into()),
+                data: "timeout".into(),
+                id: None,
+            },
+            SseEvent {
+                event_type: Some("unknown-type".into()),
+                data: "ignored".into(),
+                id: None,
+            },
+        ];
+        let classified = classify_mcp_sse_events(&events);
+        assert_eq!(classified.len(), 3); // unknown is filtered out
+    }
+
+    // --- DEFAULT_HTTP_TIMEOUT_MS ---
+
+    #[test]
+    fn default_http_timeout_is_30s() {
+        assert_eq!(DEFAULT_HTTP_TIMEOUT_MS, 30_000);
+    }
+
+    // --- TOKEN_EXPIRY_BUFFER_SECS ---
+
+    #[test]
+    fn token_expiry_buffer_is_30s() {
+        assert_eq!(TOKEN_EXPIRY_BUFFER_SECS, 30);
+    }
 }

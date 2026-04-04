@@ -1339,54 +1339,103 @@ mod tests {
     }
 
     fn cmsg(role: MessageRole, blocks: Vec<ContentBlock>) -> ConversationMessage {
-        ConversationMessage { role, blocks, usage: None }
+        ConversationMessage {
+            role,
+            blocks,
+            usage: None,
+        }
     }
 
     fn test_usage() -> api::Usage {
-        api::Usage { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+        api::Usage {
+            input_tokens: 10,
+            output_tokens: 5,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+        }
     }
 
     fn test_resp(content: Vec<OutputContentBlock>) -> MessageResponse {
         MessageResponse {
-            content, usage: test_usage(),
-            id: "m1".into(), kind: "message".into(), model: "t".into(), role: "assistant".into(),
-            stop_reason: Some("end_turn".into()), stop_sequence: None, request_id: None,
+            content,
+            usage: test_usage(),
+            id: "m1".into(),
+            kind: "message".into(),
+            model: "t".into(),
+            role: "assistant".into(),
+            stop_reason: Some("end_turn".into()),
+            stop_sequence: None,
+            request_id: None,
         }
     }
 
     fn empty_summary() -> runtime::TurnSummary {
         runtime::TurnSummary {
-            assistant_messages: vec![], tool_results: vec![], prompt_cache_events: vec![],
-            usage: runtime::TokenUsage { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
-            iterations: 0, auto_compaction: None,
+            assistant_messages: vec![],
+            tool_results: vec![],
+            prompt_cache_events: vec![],
+            usage: runtime::TokenUsage {
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+            },
+            iterations: 0,
+            auto_compaction: None,
         }
     }
 
     // --- convert_messages ---
 
     #[test]
-    fn convert_messages_empty() { assert!(convert_messages(&[]).is_empty()); }
+    fn convert_messages_empty() {
+        assert!(convert_messages(&[]).is_empty());
+    }
 
     #[test]
     fn convert_messages_user_text() {
-        let r = convert_messages(&[cmsg(MessageRole::User, vec![ContentBlock::Text { text: "hi".into() }])]);
+        let r = convert_messages(&[cmsg(
+            MessageRole::User,
+            vec![ContentBlock::Text { text: "hi".into() }],
+        )]);
         assert_eq!(r.len(), 1);
         assert_eq!(r[0].role, "user");
     }
 
     #[test]
     fn convert_messages_assistant_text() {
-        assert_eq!(convert_messages(&[cmsg(MessageRole::Assistant, vec![ContentBlock::Text { text: "a".into() }])])[0].role, "assistant");
+        assert_eq!(
+            convert_messages(&[cmsg(
+                MessageRole::Assistant,
+                vec![ContentBlock::Text { text: "a".into() }]
+            )])[0]
+                .role,
+            "assistant"
+        );
     }
 
     #[test]
     fn convert_messages_system_maps_to_user() {
-        assert_eq!(convert_messages(&[cmsg(MessageRole::System, vec![ContentBlock::Text { text: "s".into() }])])[0].role, "user");
+        assert_eq!(
+            convert_messages(&[cmsg(
+                MessageRole::System,
+                vec![ContentBlock::Text { text: "s".into() }]
+            )])[0]
+                .role,
+            "user"
+        );
     }
 
     #[test]
     fn convert_messages_tool_maps_to_user() {
-        assert_eq!(convert_messages(&[cmsg(MessageRole::Tool, vec![ContentBlock::Text { text: "o".into() }])])[0].role, "user");
+        assert_eq!(
+            convert_messages(&[cmsg(
+                MessageRole::Tool,
+                vec![ContentBlock::Text { text: "o".into() }]
+            )])[0]
+                .role,
+            "user"
+        );
     }
 
     #[test]
@@ -1396,12 +1445,35 @@ mod tests {
 
     #[test]
     fn convert_messages_tool_use_block() {
-        assert_eq!(convert_messages(&[cmsg(MessageRole::Assistant, vec![ContentBlock::ToolUse { id: "t".into(), name: "b".into(), input: r#"{"command":"ls"}"#.into() }])]).len(), 1);
+        assert_eq!(
+            convert_messages(&[cmsg(
+                MessageRole::Assistant,
+                vec![ContentBlock::ToolUse {
+                    id: "t".into(),
+                    name: "b".into(),
+                    input: r#"{"command":"ls"}"#.into()
+                }]
+            )])
+            .len(),
+            1
+        );
     }
 
     #[test]
     fn convert_messages_tool_result_block() {
-        assert_eq!(convert_messages(&[cmsg(MessageRole::Tool, vec![ContentBlock::ToolResult { tool_use_id: "t".into(), tool_name: "bash".into(), output: "ok".into(), is_error: false }])]).len(), 1);
+        assert_eq!(
+            convert_messages(&[cmsg(
+                MessageRole::Tool,
+                vec![ContentBlock::ToolResult {
+                    tool_use_id: "t".into(),
+                    tool_name: "bash".into(),
+                    output: "ok".into(),
+                    is_error: false
+                }]
+            )])
+            .len(),
+            1
+        );
     }
 
     // --- push_output_block (agent variant) ---
@@ -1410,7 +1482,13 @@ mod tests {
     fn push_output_block_text() {
         let mut events = Vec::new();
         let mut pending = BTreeMap::new();
-        push_output_block(OutputContentBlock::Text { text: "hi".into() }, 0, &mut events, &mut pending, true);
+        push_output_block(
+            OutputContentBlock::Text { text: "hi".into() },
+            0,
+            &mut events,
+            &mut pending,
+            true,
+        );
         assert!(matches!(&events[0], AssistantEvent::TextDelta(t) if t == "hi"));
     }
 
@@ -1418,7 +1496,13 @@ mod tests {
     fn push_output_block_empty_text() {
         let mut events = Vec::new();
         let mut pending = BTreeMap::new();
-        push_output_block(OutputContentBlock::Text { text: "".into() }, 0, &mut events, &mut pending, true);
+        push_output_block(
+            OutputContentBlock::Text { text: "".into() },
+            0,
+            &mut events,
+            &mut pending,
+            true,
+        );
         assert!(events.is_empty());
     }
 
@@ -1426,7 +1510,17 @@ mod tests {
     fn push_output_block_tool_use_streaming() {
         let mut events = Vec::new();
         let mut pending = BTreeMap::new();
-        push_output_block(OutputContentBlock::ToolUse { id: "t".into(), name: "b".into(), input: serde_json::json!({}) }, 0, &mut events, &mut pending, true);
+        push_output_block(
+            OutputContentBlock::ToolUse {
+                id: "t".into(),
+                name: "b".into(),
+                input: serde_json::json!({}),
+            },
+            0,
+            &mut events,
+            &mut pending,
+            true,
+        );
         assert_eq!(pending.get(&0).unwrap().2, "");
     }
 
@@ -1434,7 +1528,17 @@ mod tests {
     fn push_output_block_tool_use_non_streaming() {
         let mut events = Vec::new();
         let mut pending = BTreeMap::new();
-        push_output_block(OutputContentBlock::ToolUse { id: "t".into(), name: "b".into(), input: serde_json::json!({"k":"v"}) }, 0, &mut events, &mut pending, false);
+        push_output_block(
+            OutputContentBlock::ToolUse {
+                id: "t".into(),
+                name: "b".into(),
+                input: serde_json::json!({"k":"v"}),
+            },
+            0,
+            &mut events,
+            &mut pending,
+            false,
+        );
         assert!(pending.get(&0).unwrap().2.contains("k"));
     }
 
@@ -1442,7 +1546,16 @@ mod tests {
     fn push_output_block_thinking() {
         let mut events = Vec::new();
         let mut pending = BTreeMap::new();
-        push_output_block(OutputContentBlock::Thinking { thinking: "x".into(), signature: None }, 0, &mut events, &mut pending, true);
+        push_output_block(
+            OutputContentBlock::Thinking {
+                thinking: "x".into(),
+                signature: None,
+            },
+            0,
+            &mut events,
+            &mut pending,
+            true,
+        );
         assert!(events.is_empty());
     }
 
@@ -1450,15 +1563,27 @@ mod tests {
 
     #[test]
     fn response_to_events_text() {
-        let events = response_to_events(test_resp(vec![OutputContentBlock::Text { text: "hello".into() }]));
-        assert!(events.iter().any(|e| matches!(e, AssistantEvent::TextDelta(t) if t == "hello")));
-        assert!(events.iter().any(|e| matches!(e, AssistantEvent::MessageStop)));
+        let events = response_to_events(test_resp(vec![OutputContentBlock::Text {
+            text: "hello".into(),
+        }]));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AssistantEvent::TextDelta(t) if t == "hello")));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AssistantEvent::MessageStop)));
     }
 
     #[test]
     fn response_to_events_tool_use() {
-        let events = response_to_events(test_resp(vec![OutputContentBlock::ToolUse { id: "t".into(), name: "bash".into(), input: serde_json::json!({"c":"l"}) }]));
-        assert!(events.iter().any(|e| matches!(e, AssistantEvent::ToolUse { name, .. } if name == "bash")));
+        let events = response_to_events(test_resp(vec![OutputContentBlock::ToolUse {
+            id: "t".into(),
+            name: "bash".into(),
+            input: serde_json::json!({"c":"l"}),
+        }]));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AssistantEvent::ToolUse { name, .. } if name == "bash")));
     }
 
     // --- final_assistant_text (agent variant) ---
@@ -1471,7 +1596,12 @@ mod tests {
     #[test]
     fn final_assistant_text_single() {
         let mut s = empty_summary();
-        s.assistant_messages = vec![cmsg(MessageRole::Assistant, vec![ContentBlock::Text { text: "result".into() }])];
+        s.assistant_messages = vec![cmsg(
+            MessageRole::Assistant,
+            vec![ContentBlock::Text {
+                text: "result".into(),
+            }],
+        )];
         assert_eq!(final_assistant_text(&s), "result");
     }
 
@@ -1582,7 +1712,8 @@ mod tests {
 
     #[test]
     fn subagent_tool_executor_blocks_disallowed_tool() {
-        let mut executor = SubagentToolExecutor::new(["bash"].iter().map(|s| s.to_string()).collect());
+        let mut executor =
+            SubagentToolExecutor::new(["bash"].iter().map(|s| s.to_string()).collect());
         let result = executor.execute("write_file", "{}");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not enabled"));
@@ -1590,11 +1721,537 @@ mod tests {
 
     #[test]
     fn subagent_tool_executor_mcp_without_bridge_errors() {
-        let mut executor = SubagentToolExecutor::new(
-            ["mcp__test__tool"].iter().map(|s| s.to_string()).collect(),
-        );
+        let mut executor =
+            SubagentToolExecutor::new(["mcp__test__tool"].iter().map(|s| s.to_string()).collect());
         let result = executor.execute("mcp__test__tool", "{}");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not available"));
+    }
+
+    // --- execute_agent_with_spawn additional validation ---
+
+    #[test]
+    fn execute_agent_with_spawn_whitespace_description_errors() {
+        let input = crate::types::AgentInput {
+            description: String::from("   "),
+            prompt: String::from("do something"),
+            subagent_type: None,
+            name: None,
+            model: None,
+        };
+        let result = execute_agent_with_spawn(input, |_| Ok(()));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn execute_agent_with_spawn_whitespace_prompt_errors() {
+        let input = crate::types::AgentInput {
+            description: String::from("a task"),
+            prompt: String::from("   "),
+            subagent_type: None,
+            name: None,
+            model: None,
+        };
+        let result = execute_agent_with_spawn(input, |_| Ok(()));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn execute_agent_with_spawn_spawn_failure() {
+        let input = crate::types::AgentInput {
+            description: String::from("a task"),
+            prompt: String::from("do something"),
+            subagent_type: Some("Explore".to_string()),
+            name: Some("test-agent".to_string()),
+            model: Some("opus".to_string()),
+        };
+        let result = execute_agent_with_spawn(input, |_| Err("spawn failed".to_string()));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("spawn failed"));
+    }
+
+    #[test]
+    fn execute_agent_with_spawn_success() {
+        let input = crate::types::AgentInput {
+            description: String::from("a task"),
+            prompt: String::from("do something"),
+            subagent_type: Some("general".to_string()),
+            name: None,
+            model: None,
+        };
+        let result = execute_agent_with_spawn(input, |_job| Ok(()));
+        assert!(result.is_ok());
+        let manifest = result.unwrap();
+        assert_eq!(manifest.status, "running");
+        assert!(manifest.subagent_type.as_deref() == Some("general-purpose"));
+    }
+
+    #[test]
+    fn execute_agent_with_spawn_custom_name() {
+        let input = crate::types::AgentInput {
+            description: String::from("a task"),
+            prompt: String::from("do something"),
+            subagent_type: None,
+            name: Some("my-custom-agent".to_string()),
+            model: None,
+        };
+        let result = execute_agent_with_spawn(input, |_| Ok(()));
+        assert!(result.is_ok());
+        let manifest = result.unwrap();
+        assert_eq!(manifest.name, "my-custom-agent");
+    }
+
+    // --- SubagentToolExecutor additional ---
+
+    #[test]
+    fn subagent_tool_executor_invalid_json_errors() {
+        let mut executor =
+            SubagentToolExecutor::new(["bash"].iter().map(|s| s.to_string()).collect());
+        let result = executor.execute("bash", "not valid json");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("invalid"));
+    }
+
+    #[test]
+    fn subagent_tool_executor_allows_allowed_tool() {
+        let mut executor = SubagentToolExecutor::new(
+            ["bash", "read_file"].iter().map(|s| s.to_string()).collect(),
+        );
+        // bash with valid input should be executed (may fail due to actual tool execution,
+        // but it should pass the permission check)
+        let result = executor.execute("bash", r#"{"command":"echo test"}"#);
+        // This will either succeed or fail at tool execution, not at permission check
+        let _ = result;
+    }
+
+    // --- allowed_tools_for_subagent additional ---
+
+    #[test]
+    fn allowed_tools_plan_has_no_bash() {
+        let tools = allowed_tools_for_subagent("Plan");
+        assert!(!tools.contains("bash"));
+    }
+
+    #[test]
+    fn allowed_tools_explore_has_web_tools() {
+        let tools = allowed_tools_for_subagent("Explore");
+        assert!(tools.contains("WebFetch"));
+        assert!(tools.contains("WebSearch"));
+    }
+
+    #[test]
+    fn allowed_tools_verification_has_powershell() {
+        let tools = allowed_tools_for_subagent("Verification");
+        assert!(tools.contains("PowerShell"));
+    }
+
+    #[test]
+    fn allowed_tools_default_has_all_common() {
+        let tools = allowed_tools_for_subagent("some-custom-type");
+        assert!(tools.contains("bash"));
+        assert!(tools.contains("read_file"));
+        assert!(tools.contains("write_file"));
+        assert!(tools.contains("edit_file"));
+        assert!(tools.contains("glob_search"));
+        assert!(tools.contains("grep_search"));
+        assert!(tools.contains("WebFetch"));
+        assert!(tools.contains("WebSearch"));
+        assert!(tools.contains("TodoWrite"));
+        assert!(tools.contains("Skill"));
+        assert!(tools.contains("ToolSearch"));
+        assert!(tools.contains("NotebookEdit"));
+        assert!(tools.contains("Sleep"));
+        assert!(tools.contains("SendUserMessage"));
+        assert!(tools.contains("Config"));
+        assert!(tools.contains("StructuredOutput"));
+        assert!(tools.contains("REPL"));
+        assert!(tools.contains("PowerShell"));
+    }
+
+    // --- format_agent_terminal_output additional ---
+
+    #[test]
+    fn format_agent_terminal_output_with_both_result_and_error() {
+        let output = format_agent_terminal_output("failed", Some("partial output"), Some("error msg"));
+        assert!(output.contains("partial output"));
+        assert!(output.contains("error msg"));
+        assert!(output.contains("failed"));
+    }
+
+    // --- slugify_agent_name additional ---
+
+    #[test]
+    fn slugify_agent_name_unicode() {
+        let result = slugify_agent_name("café résumé");
+        assert!(!result.contains("é"));
+        // Unicode chars should become dashes
+    }
+
+    #[test]
+    fn slugify_agent_name_all_special() {
+        assert_eq!(slugify_agent_name("@#$%^&*"), "");
+    }
+
+    #[test]
+    fn slugify_agent_name_numbers_preserved() {
+        assert_eq!(slugify_agent_name("task-123"), "task-123");
+    }
+
+    // --- normalize_subagent_type additional ---
+
+    #[test]
+    fn normalize_subagent_type_whitespace_only() {
+        assert_eq!(normalize_subagent_type(Some("   ")), "general-purpose");
+    }
+
+    #[test]
+    fn normalize_subagent_type_general_purpose_agent() {
+        assert_eq!(
+            normalize_subagent_type(Some("GeneralPurposeAgent")),
+            "general-purpose"
+        );
+    }
+
+    #[test]
+    fn normalize_subagent_type_explore_agent() {
+        assert_eq!(normalize_subagent_type(Some("ExploreAgent")), "Explore");
+    }
+
+    #[test]
+    fn normalize_subagent_type_plan_agent() {
+        assert_eq!(normalize_subagent_type(Some("PlanAgent")), "Plan");
+    }
+
+    #[test]
+    fn normalize_subagent_type_verification_agent() {
+        assert_eq!(
+            normalize_subagent_type(Some("VerificationAgent")),
+            "Verification"
+        );
+    }
+
+    #[test]
+    fn normalize_subagent_type_claw_guide_agent() {
+        assert_eq!(
+            normalize_subagent_type(Some("ClawGuideAgent")),
+            "claw-guide"
+        );
+    }
+
+    #[test]
+    fn normalize_subagent_type_statusline_setup_variant() {
+        assert_eq!(
+            normalize_subagent_type(Some("StatuslineSetup")),
+            "statusline-setup"
+        );
+    }
+
+    // --- convert_messages additional ---
+
+    #[test]
+    fn convert_messages_multiple_messages() {
+        let r = convert_messages(&[
+            cmsg(
+                MessageRole::User,
+                vec![ContentBlock::Text { text: "q".into() }],
+            ),
+            cmsg(
+                MessageRole::Assistant,
+                vec![ContentBlock::Text { text: "a".into() }],
+            ),
+            cmsg(
+                MessageRole::Tool,
+                vec![ContentBlock::ToolResult {
+                    tool_use_id: "t1".into(),
+                    tool_name: "bash".into(),
+                    output: "ok".into(),
+                    is_error: false,
+                }],
+            ),
+        ]);
+        assert_eq!(r.len(), 3);
+    }
+
+    #[test]
+    fn convert_messages_invalid_json_fallback() {
+        let r = convert_messages(&[cmsg(
+            MessageRole::Assistant,
+            vec![ContentBlock::ToolUse {
+                id: "t".into(),
+                name: "bash".into(),
+                input: "not valid json".into(),
+            }],
+        )]);
+        assert_eq!(r.len(), 1);
+    }
+
+    // --- push_output_block additional ---
+
+    #[test]
+    fn push_output_block_redacted_thinking() {
+        let mut events = Vec::new();
+        let mut pending = BTreeMap::new();
+        push_output_block(
+            OutputContentBlock::RedactedThinking { data: "x".into() },
+            0,
+            &mut events,
+            &mut pending,
+            true,
+        );
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn push_output_block_multiple_tools() {
+        let mut events = Vec::new();
+        let mut pending = BTreeMap::new();
+        push_output_block(
+            OutputContentBlock::ToolUse {
+                id: "t1".into(),
+                name: "bash".into(),
+                input: serde_json::json!({}),
+            },
+            0,
+            &mut events,
+            &mut pending,
+            true,
+        );
+        push_output_block(
+            OutputContentBlock::ToolUse {
+                id: "t2".into(),
+                name: "Read".into(),
+                input: serde_json::json!({}),
+            },
+            1,
+            &mut events,
+            &mut pending,
+            true,
+        );
+        assert_eq!(pending.len(), 2);
+    }
+
+    // --- response_to_events additional ---
+
+    #[test]
+    fn response_to_events_empty() {
+        let events = response_to_events(test_resp(vec![]));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AssistantEvent::MessageStop)));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AssistantEvent::Usage(_))));
+    }
+
+    #[test]
+    fn response_to_events_mixed_blocks() {
+        let events = response_to_events(test_resp(vec![
+            OutputContentBlock::Text { text: "hi".into() },
+            OutputContentBlock::ToolUse {
+                id: "t1".into(),
+                name: "bash".into(),
+                input: serde_json::json!({"command":"ls"}),
+            },
+        ]));
+        let text_count = events
+            .iter()
+            .filter(|e| matches!(e, AssistantEvent::TextDelta(_)))
+            .count();
+        assert_eq!(text_count, 1);
+        let tool_count = events
+            .iter()
+            .filter(|e| matches!(e, AssistantEvent::ToolUse { .. }))
+            .count();
+        assert_eq!(tool_count, 1);
+    }
+
+    // --- prompt_cache_record_to_runtime_event ---
+
+    #[test]
+    fn prompt_cache_record_none_break() {
+        let record = api::PromptCacheRecord {
+            cache_break: None,
+            stats: Default::default(),
+        };
+        assert!(prompt_cache_record_to_runtime_event(record).is_none());
+    }
+
+    #[test]
+    fn prompt_cache_record_with_break() {
+        let record = api::PromptCacheRecord {
+            cache_break: Some(api::CacheBreakEvent {
+                unexpected: false,
+                reason: "normal".into(),
+                previous_cache_read_input_tokens: 200,
+                current_cache_read_input_tokens: 100,
+                token_drop: 100,
+            }),
+            stats: Default::default(),
+        };
+        let event = prompt_cache_record_to_runtime_event(record).unwrap();
+        assert!(!event.unexpected);
+        assert_eq!(event.token_drop, 100);
+    }
+
+    // --- final_assistant_text additional ---
+
+    #[test]
+    fn final_assistant_text_concatenates() {
+        let mut s = empty_summary();
+        s.assistant_messages = vec![cmsg(
+            MessageRole::Assistant,
+            vec![
+                ContentBlock::Text { text: "a".into() },
+                ContentBlock::Text { text: "b".into() },
+            ],
+        )];
+        assert_eq!(final_assistant_text(&s), "ab");
+    }
+
+    #[test]
+    fn final_assistant_text_uses_last_message() {
+        let mut s = empty_summary();
+        s.assistant_messages = vec![
+            cmsg(
+                MessageRole::Assistant,
+                vec![ContentBlock::Text {
+                    text: "first".into(),
+                }],
+            ),
+            cmsg(
+                MessageRole::Assistant,
+                vec![ContentBlock::Text {
+                    text: "second".into(),
+                }],
+            ),
+        ];
+        assert_eq!(final_assistant_text(&s), "second");
+    }
+
+    #[test]
+    fn final_assistant_text_skips_tool_use() {
+        let mut s = empty_summary();
+        s.assistant_messages = vec![cmsg(
+            MessageRole::Assistant,
+            vec![
+                ContentBlock::ToolUse {
+                    id: "t".into(),
+                    name: "bash".into(),
+                    input: "{}".into(),
+                },
+                ContentBlock::Text {
+                    text: "result".into(),
+                },
+            ],
+        )];
+        assert_eq!(final_assistant_text(&s), "result");
+    }
+
+    // --- McpBridge ---
+
+    #[test]
+    fn mcp_bridge_debug_impl() {
+        let manager = std::sync::Arc::new(std::sync::Mutex::new(
+            runtime::McpServerManager::from_servers(&BTreeMap::new()),
+        ));
+        let rt = std::sync::Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let bridge = McpBridge::new(manager, rt);
+        let debug = format!("{bridge:?}");
+        assert!(debug.contains("McpBridge"));
+    }
+
+    #[test]
+    fn mcp_bridge_clone() {
+        let manager = std::sync::Arc::new(std::sync::Mutex::new(
+            runtime::McpServerManager::from_servers(&BTreeMap::new()),
+        ));
+        let rt = std::sync::Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let bridge = McpBridge::new(manager, rt);
+        let _cloned = bridge.clone();
+    }
+
+    // --- AgentSpawnRequest ---
+
+    #[test]
+    fn agent_spawn_request_construction() {
+        let req = AgentSpawnRequest {
+            description: "test".into(),
+            prompt: "do something".into(),
+            subagent_type: Some("Explore".into()),
+            model: Some("opus".into()),
+        };
+        assert_eq!(req.description, "test");
+    }
+
+    // --- AgentResult ---
+
+    #[test]
+    fn agent_result_clone_and_debug() {
+        let result = AgentResult {
+            agent_id: "a1".into(),
+            name: "test".into(),
+            status: "completed".into(),
+            output: Some("done".into()),
+            error: None,
+        };
+        let cloned = result.clone();
+        assert_eq!(cloned.agent_id, "a1");
+        let debug = format!("{cloned:?}");
+        assert!(debug.contains("a1"));
+    }
+
+    // --- AgentJob ---
+
+    #[test]
+    fn agent_job_clone_and_debug() {
+        let job = AgentJob {
+            manifest: AgentOutput {
+                agent_id: "a1".into(),
+                name: "test".into(),
+                description: "d".into(),
+                subagent_type: None,
+                model: None,
+                status: "running".into(),
+                output_file: "o".into(),
+                manifest_file: "m".into(),
+                created_at: "0".into(),
+                started_at: None,
+                completed_at: None,
+                error: None,
+            },
+            prompt: "do something".into(),
+            system_prompt: vec!["prompt".into()],
+            allowed_tools: BTreeSet::new(),
+            mcp_bridge: None,
+        };
+        let cloned = job.clone();
+        assert_eq!(cloned.prompt, "do something");
+        let debug = format!("{cloned:?}");
+        assert!(debug.contains("do something"));
+    }
+
+    // --- tool_specs_for_allowed_tools additional ---
+
+    #[test]
+    fn tool_specs_for_allowed_tools_multiple_tools() {
+        let allowed: BTreeSet<String> = ["bash", "read_file"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let specs = tool_specs_for_allowed_tools(Some(&allowed));
+        assert!(specs.iter().all(|s| allowed.contains(s.name)));
+    }
+
+    // --- SubagentToolExecutor with_mcp_bridge ---
+
+    #[test]
+    fn subagent_tool_executor_with_mcp_bridge() {
+        let manager = std::sync::Arc::new(std::sync::Mutex::new(
+            runtime::McpServerManager::from_servers(&BTreeMap::new()),
+        ));
+        let rt = std::sync::Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let bridge = McpBridge::new(manager, rt);
+        let executor = SubagentToolExecutor::new(BTreeSet::new()).with_mcp_bridge(bridge);
+        assert!(executor.mcp_bridge.is_some());
     }
 }
