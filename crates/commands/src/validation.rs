@@ -414,3 +414,673 @@ pub(crate) fn find_slash_command_spec(name: &str) -> Option<&'static SlashComman
 pub(crate) fn command_root_name(command: &str) -> &str {
     command.split_whitespace().next().unwrap_or(command)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::SlashCommand;
+
+    // --- SlashCommand::parse ---
+
+    #[test]
+    fn parse_non_slash_returns_none() {
+        assert_eq!(SlashCommand::parse("hello").unwrap(), None);
+    }
+
+    #[test]
+    fn parse_empty_command_after_slash() {
+        assert!(SlashCommand::parse("/").is_err());
+    }
+
+    #[test]
+    fn parse_help() {
+        assert_eq!(
+            SlashCommand::parse("/help").unwrap(),
+            Some(SlashCommand::Help)
+        );
+    }
+
+    #[test]
+    fn parse_status() {
+        assert_eq!(
+            SlashCommand::parse("/status").unwrap(),
+            Some(SlashCommand::Status)
+        );
+    }
+
+    #[test]
+    fn parse_sandbox() {
+        assert_eq!(
+            SlashCommand::parse("/sandbox").unwrap(),
+            Some(SlashCommand::Sandbox)
+        );
+    }
+
+    #[test]
+    fn parse_compact() {
+        assert_eq!(
+            SlashCommand::parse("/compact").unwrap(),
+            Some(SlashCommand::Compact)
+        );
+    }
+
+    #[test]
+    fn parse_commit() {
+        assert_eq!(
+            SlashCommand::parse("/commit").unwrap(),
+            Some(SlashCommand::Commit)
+        );
+    }
+
+    #[test]
+    fn parse_cost() {
+        assert_eq!(
+            SlashCommand::parse("/cost").unwrap(),
+            Some(SlashCommand::Cost)
+        );
+    }
+
+    #[test]
+    fn parse_memory() {
+        assert_eq!(
+            SlashCommand::parse("/memory").unwrap(),
+            Some(SlashCommand::Memory)
+        );
+    }
+
+    #[test]
+    fn parse_init() {
+        assert_eq!(
+            SlashCommand::parse("/init").unwrap(),
+            Some(SlashCommand::Init)
+        );
+    }
+
+    #[test]
+    fn parse_diff() {
+        assert_eq!(
+            SlashCommand::parse("/diff").unwrap(),
+            Some(SlashCommand::Diff)
+        );
+    }
+
+    #[test]
+    fn parse_version() {
+        assert_eq!(
+            SlashCommand::parse("/version").unwrap(),
+            Some(SlashCommand::Version)
+        );
+    }
+
+    #[test]
+    fn parse_debug_tool_call() {
+        assert_eq!(
+            SlashCommand::parse("/debug-tool-call").unwrap(),
+            Some(SlashCommand::DebugToolCall)
+        );
+    }
+
+    #[test]
+    fn parse_unknown_command() {
+        assert_eq!(
+            SlashCommand::parse("/nonexistent").unwrap(),
+            Some(SlashCommand::Unknown("nonexistent".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_help_with_args_errors() {
+        assert!(SlashCommand::parse("/help extra").is_err());
+    }
+
+    #[test]
+    fn parse_model_no_args() {
+        assert_eq!(
+            SlashCommand::parse("/model").unwrap(),
+            Some(SlashCommand::Model { model: None })
+        );
+    }
+
+    #[test]
+    fn parse_model_with_arg() {
+        assert_eq!(
+            SlashCommand::parse("/model opus").unwrap(),
+            Some(SlashCommand::Model {
+                model: Some("opus".to_string())
+            })
+        );
+    }
+
+    #[test]
+    fn parse_model_too_many_args_errors() {
+        assert!(SlashCommand::parse("/model a b").is_err());
+    }
+
+    #[test]
+    fn parse_export_with_path() {
+        assert_eq!(
+            SlashCommand::parse("/export /tmp/file.md").unwrap(),
+            Some(SlashCommand::Export {
+                path: Some("/tmp/file.md".to_string())
+            })
+        );
+    }
+
+    #[test]
+    fn parse_export_no_path() {
+        assert_eq!(
+            SlashCommand::parse("/export").unwrap(),
+            Some(SlashCommand::Export { path: None })
+        );
+    }
+
+    #[test]
+    fn parse_bughunter() {
+        let result = SlashCommand::parse("/bughunter src/").unwrap();
+        assert_eq!(
+            result,
+            Some(SlashCommand::Bughunter {
+                scope: Some("src/".to_string())
+            })
+        );
+    }
+
+    #[test]
+    fn parse_pr_with_context() {
+        let result = SlashCommand::parse("/pr fix auth bug").unwrap();
+        assert_eq!(
+            result,
+            Some(SlashCommand::Pr {
+                context: Some("fix auth bug".to_string())
+            })
+        );
+    }
+
+    #[test]
+    fn parse_issue_no_context() {
+        let result = SlashCommand::parse("/issue").unwrap();
+        assert_eq!(result, Some(SlashCommand::Issue { context: None }));
+    }
+
+    // --- validate_no_args ---
+
+    #[test]
+    fn validate_no_args_empty() {
+        assert!(validate_no_args("help", &[]).is_ok());
+    }
+
+    #[test]
+    fn validate_no_args_with_args() {
+        assert!(validate_no_args("help", &["extra"]).is_err());
+    }
+
+    // --- optional_single_arg ---
+
+    #[test]
+    fn optional_single_arg_none() {
+        assert_eq!(optional_single_arg("model", &[], "[model]").unwrap(), None);
+    }
+
+    #[test]
+    fn optional_single_arg_one() {
+        assert_eq!(
+            optional_single_arg("model", &["opus"], "[model]").unwrap(),
+            Some("opus".to_string())
+        );
+    }
+
+    #[test]
+    fn optional_single_arg_too_many() {
+        assert!(optional_single_arg("model", &["a", "b"], "[model]").is_err());
+    }
+
+    // --- require_remainder ---
+
+    #[test]
+    fn require_remainder_present() {
+        assert_eq!(
+            require_remainder("teleport", Some("target".to_string()), "<target>").unwrap(),
+            "target"
+        );
+    }
+
+    #[test]
+    fn require_remainder_missing() {
+        assert!(require_remainder("teleport", None, "<target>").is_err());
+    }
+
+    // --- parse_permissions_mode ---
+
+    #[test]
+    fn parse_permissions_mode_none() {
+        assert_eq!(parse_permissions_mode(&[]).unwrap(), None);
+    }
+
+    #[test]
+    fn parse_permissions_mode_valid() {
+        assert_eq!(
+            parse_permissions_mode(&["read-only"]).unwrap(),
+            Some("read-only".to_string())
+        );
+        assert_eq!(
+            parse_permissions_mode(&["workspace-write"]).unwrap(),
+            Some("workspace-write".to_string())
+        );
+        assert_eq!(
+            parse_permissions_mode(&["danger-full-access"]).unwrap(),
+            Some("danger-full-access".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_permissions_mode_invalid() {
+        assert!(parse_permissions_mode(&["admin"]).is_err());
+    }
+
+    // --- parse_clear_args ---
+
+    #[test]
+    fn parse_clear_args_empty() {
+        assert!(!parse_clear_args(&[]).unwrap());
+    }
+
+    #[test]
+    fn parse_clear_args_confirm() {
+        assert!(parse_clear_args(&["--confirm"]).unwrap());
+    }
+
+    #[test]
+    fn parse_clear_args_invalid() {
+        assert!(parse_clear_args(&["--force"]).is_err());
+    }
+
+    #[test]
+    fn parse_clear_args_too_many() {
+        assert!(parse_clear_args(&["--confirm", "extra"]).is_err());
+    }
+
+    // --- parse_config_section ---
+
+    #[test]
+    fn parse_config_section_none() {
+        assert_eq!(parse_config_section(&[]).unwrap(), None);
+    }
+
+    #[test]
+    fn parse_config_section_valid() {
+        assert_eq!(
+            parse_config_section(&["env"]).unwrap(),
+            Some("env".to_string())
+        );
+        assert_eq!(
+            parse_config_section(&["hooks"]).unwrap(),
+            Some("hooks".to_string())
+        );
+        assert_eq!(
+            parse_config_section(&["model"]).unwrap(),
+            Some("model".to_string())
+        );
+        assert_eq!(
+            parse_config_section(&["plugins"]).unwrap(),
+            Some("plugins".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_config_section_invalid() {
+        assert!(parse_config_section(&["database"]).is_err());
+    }
+
+    // --- parse_session_command ---
+
+    #[test]
+    fn parse_session_no_args() {
+        let cmd = parse_session_command(&[]).unwrap();
+        assert_eq!(
+            cmd,
+            SlashCommand::Session {
+                action: None,
+                target: None
+            }
+        );
+    }
+
+    #[test]
+    fn parse_session_list() {
+        let cmd = parse_session_command(&["list"]).unwrap();
+        assert_eq!(
+            cmd,
+            SlashCommand::Session {
+                action: Some("list".to_string()),
+                target: None
+            }
+        );
+    }
+
+    #[test]
+    fn parse_session_switch_with_target() {
+        let cmd = parse_session_command(&["switch", "abc"]).unwrap();
+        assert_eq!(
+            cmd,
+            SlashCommand::Session {
+                action: Some("switch".to_string()),
+                target: Some("abc".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn parse_session_switch_no_target() {
+        assert!(parse_session_command(&["switch"]).is_err());
+    }
+
+    #[test]
+    fn parse_session_switch_too_many() {
+        assert!(parse_session_command(&["switch", "a", "b"]).is_err());
+    }
+
+    #[test]
+    fn parse_session_fork_no_target() {
+        let cmd = parse_session_command(&["fork"]).unwrap();
+        assert_eq!(
+            cmd,
+            SlashCommand::Session {
+                action: Some("fork".to_string()),
+                target: None
+            }
+        );
+    }
+
+    #[test]
+    fn parse_session_fork_with_target() {
+        let cmd = parse_session_command(&["fork", "branch"]).unwrap();
+        assert_eq!(
+            cmd,
+            SlashCommand::Session {
+                action: Some("fork".to_string()),
+                target: Some("branch".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn parse_session_fork_too_many() {
+        assert!(parse_session_command(&["fork", "a", "b"]).is_err());
+    }
+
+    #[test]
+    fn parse_session_unknown_action() {
+        assert!(parse_session_command(&["delete"]).is_err());
+    }
+
+    #[test]
+    fn parse_session_list_with_extra() {
+        assert!(parse_session_command(&["list", "extra"]).is_err());
+    }
+
+    // --- parse_plugin_command ---
+
+    #[test]
+    fn parse_plugin_no_args() {
+        let cmd = parse_plugin_command(&[]).unwrap();
+        assert_eq!(
+            cmd,
+            SlashCommand::Plugins {
+                action: None,
+                target: None
+            }
+        );
+    }
+
+    #[test]
+    fn parse_plugin_list() {
+        let cmd = parse_plugin_command(&["list"]).unwrap();
+        assert_eq!(
+            cmd,
+            SlashCommand::Plugins {
+                action: Some("list".to_string()),
+                target: None
+            }
+        );
+    }
+
+    #[test]
+    fn parse_plugin_install_no_target() {
+        assert!(parse_plugin_command(&["install"]).is_err());
+    }
+
+    #[test]
+    fn parse_plugin_install_with_target() {
+        let cmd = parse_plugin_command(&["install", "/path/to/plugin"]).unwrap();
+        assert_eq!(
+            cmd,
+            SlashCommand::Plugins {
+                action: Some("install".to_string()),
+                target: Some("/path/to/plugin".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn parse_plugin_enable_no_target() {
+        assert!(parse_plugin_command(&["enable"]).is_err());
+    }
+
+    #[test]
+    fn parse_plugin_enable_with_target() {
+        let cmd = parse_plugin_command(&["enable", "my-plugin"]).unwrap();
+        assert_eq!(
+            cmd,
+            SlashCommand::Plugins {
+                action: Some("enable".to_string()),
+                target: Some("my-plugin".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn parse_plugin_disable_no_target() {
+        assert!(parse_plugin_command(&["disable"]).is_err());
+    }
+
+    #[test]
+    fn parse_plugin_disable_with_target() {
+        let cmd = parse_plugin_command(&["disable", "my-plugin"]).unwrap();
+        assert_eq!(
+            cmd,
+            SlashCommand::Plugins {
+                action: Some("disable".to_string()),
+                target: Some("my-plugin".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn parse_plugin_uninstall_no_target() {
+        assert!(parse_plugin_command(&["uninstall"]).is_err());
+    }
+
+    #[test]
+    fn parse_plugin_uninstall_with_target() {
+        let cmd = parse_plugin_command(&["uninstall", "my-plugin"]).unwrap();
+        assert_eq!(
+            cmd,
+            SlashCommand::Plugins {
+                action: Some("uninstall".to_string()),
+                target: Some("my-plugin".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn parse_plugin_update_no_target() {
+        assert!(parse_plugin_command(&["update"]).is_err());
+    }
+
+    #[test]
+    fn parse_plugin_update_with_target() {
+        let cmd = parse_plugin_command(&["update", "my-plugin"]).unwrap();
+        assert_eq!(
+            cmd,
+            SlashCommand::Plugins {
+                action: Some("update".to_string()),
+                target: Some("my-plugin".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn parse_plugin_unknown_action() {
+        assert!(parse_plugin_command(&["remove"]).is_err());
+    }
+
+    #[test]
+    fn parse_plugin_enable_too_many() {
+        assert!(parse_plugin_command(&["enable", "a", "b"]).is_err());
+    }
+
+    #[test]
+    fn parse_plugin_disable_too_many() {
+        assert!(parse_plugin_command(&["disable", "a", "b"]).is_err());
+    }
+
+    #[test]
+    fn parse_plugin_uninstall_too_many() {
+        assert!(parse_plugin_command(&["uninstall", "a", "b"]).is_err());
+    }
+
+    #[test]
+    fn parse_plugin_update_too_many() {
+        assert!(parse_plugin_command(&["update", "a", "b"]).is_err());
+    }
+
+    #[test]
+    fn parse_plugin_list_with_extra() {
+        assert!(parse_plugin_command(&["list", "extra"]).is_err());
+    }
+
+    // --- remainder_after_command ---
+
+    #[test]
+    fn remainder_after_command_present() {
+        assert_eq!(
+            remainder_after_command("/export /tmp/file.md", "export"),
+            Some("/tmp/file.md".to_string())
+        );
+    }
+
+    #[test]
+    fn remainder_after_command_empty() {
+        assert_eq!(remainder_after_command("/export", "export"), None);
+    }
+
+    #[test]
+    fn remainder_after_command_whitespace_only() {
+        assert_eq!(remainder_after_command("/export   ", "export"), None);
+    }
+
+    // --- command_root_name ---
+
+    #[test]
+    fn command_root_name_single() {
+        assert_eq!(command_root_name("help"), "help");
+    }
+
+    #[test]
+    fn command_root_name_multi() {
+        assert_eq!(command_root_name("session switch"), "session");
+    }
+
+    // --- parse_skills_args ---
+
+    #[test]
+    fn parse_skills_args_none() {
+        assert_eq!(parse_skills_args(None).unwrap(), None);
+    }
+
+    #[test]
+    fn parse_skills_args_list() {
+        assert_eq!(
+            parse_skills_args(Some("list")).unwrap(),
+            Some("list".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_skills_args_help() {
+        assert_eq!(
+            parse_skills_args(Some("help")).unwrap(),
+            Some("help".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_skills_args_install_no_target() {
+        assert!(parse_skills_args(Some("install")).is_err());
+    }
+
+    #[test]
+    fn parse_skills_args_install_with_target() {
+        assert_eq!(
+            parse_skills_args(Some("install /path")).unwrap(),
+            Some("install /path".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_skills_args_invalid() {
+        assert!(parse_skills_args(Some("remove")).is_err());
+    }
+
+    // --- parse_list_or_help_args ---
+
+    #[test]
+    fn parse_list_or_help_args_none() {
+        assert!(parse_list_or_help_args("agents", None).is_ok());
+    }
+
+    #[test]
+    fn parse_list_or_help_args_list() {
+        assert!(parse_list_or_help_args("agents", Some("list".to_string())).is_ok());
+    }
+
+    #[test]
+    fn parse_list_or_help_args_help() {
+        assert!(parse_list_or_help_args("agents", Some("help".to_string())).is_ok());
+    }
+
+    #[test]
+    fn parse_list_or_help_args_invalid() {
+        assert!(parse_list_or_help_args("agents", Some("delete".to_string())).is_err());
+    }
+
+    // --- parse from /plugin aliases ---
+
+    #[test]
+    fn parse_plugins_alias() {
+        let result = SlashCommand::parse("/plugins").unwrap();
+        assert!(matches!(
+            result,
+            Some(SlashCommand::Plugins { action: None, .. })
+        ));
+    }
+
+    #[test]
+    fn parse_marketplace_alias() {
+        let result = SlashCommand::parse("/marketplace").unwrap();
+        assert!(matches!(
+            result,
+            Some(SlashCommand::Plugins { action: None, .. })
+        ));
+    }
+
+    // --- whitespace handling ---
+
+    #[test]
+    fn parse_with_leading_trailing_whitespace() {
+        assert_eq!(
+            SlashCommand::parse("  /help  ").unwrap(),
+            Some(SlashCommand::Help)
+        );
+    }
+}

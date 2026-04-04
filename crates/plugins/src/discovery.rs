@@ -742,3 +742,776 @@ pub(crate) fn ensure_object<'a>(
         .and_then(Value::as_object_mut)
         .expect("object should exist")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    use crate::registry::PluginManifestValidationError;
+    use crate::types::Plugin;
+
+    fn temp_dir(label: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("discovery-{label}-{nanos}"))
+    }
+
+    fn write_file(path: &Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, contents).unwrap();
+    }
+
+    // --- plugin_id ---
+
+    #[test]
+    fn plugin_id_format() {
+        assert_eq!(plugin_id("my-plugin", "external"), "my-plugin@external");
+        assert_eq!(plugin_id("test", "builtin"), "test@builtin");
+    }
+
+    // --- sanitize_plugin_id ---
+
+    #[test]
+    fn sanitize_plugin_id_replaces_special_chars() {
+        assert_eq!(sanitize_plugin_id("my/plugin"), "my-plugin");
+        assert_eq!(sanitize_plugin_id("my\\plugin"), "my-plugin");
+        assert_eq!(sanitize_plugin_id("my@plugin"), "my-plugin");
+        assert_eq!(sanitize_plugin_id("my:plugin"), "my-plugin");
+        assert_eq!(sanitize_plugin_id("safe-name"), "safe-name");
+    }
+
+    // --- describe_install_source ---
+
+    #[test]
+    fn describe_install_source_local() {
+        let source = PluginInstallSource::LocalPath {
+            path: PathBuf::from("/tmp/test"),
+        };
+        assert_eq!(describe_install_source(&source), "/tmp/test");
+    }
+
+    #[test]
+    fn describe_install_source_git() {
+        let source = PluginInstallSource::GitUrl {
+            url: "https://github.com/test/repo.git".to_string(),
+        };
+        assert_eq!(
+            describe_install_source(&source),
+            "https://github.com/test/repo.git"
+        );
+    }
+
+    // --- is_literal_command ---
+
+    #[test]
+    fn is_literal_command_true() {
+        assert!(is_literal_command("echo hello"));
+        assert!(is_literal_command("node script.js"));
+        assert!(is_literal_command("python3 -c 'print(1)'"));
+    }
+
+    #[test]
+    fn is_literal_command_false() {
+        assert!(!is_literal_command("./script.sh"));
+        assert!(!is_literal_command("../script.sh"));
+        assert!(!is_literal_command("/usr/bin/script"));
+    }
+
+    // --- resolve_hook_entry ---
+
+    #[test]
+    fn resolve_hook_entry_literal() {
+        let result = resolve_hook_entry(Path::new("/root"), "echo hello");
+        assert_eq!(result, "echo hello");
+    }
+
+    #[test]
+    fn resolve_hook_entry_relative() {
+        let result = resolve_hook_entry(Path::new("/root"), "./hook.sh");
+        assert!(result.contains("/root"));
+        assert!(result.contains("hook.sh"));
+    }
+
+    // --- validate_required_manifest_field ---
+
+    #[test]
+    fn validate_required_field_non_empty() {
+        let mut errors = Vec::new();
+        validate_required_manifest_field("name", "test", &mut errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn validate_required_field_empty() {
+        let mut errors = Vec::new();
+        validate_required_manifest_field("name", "", &mut errors);
+        assert_eq!(errors.len(), 1);
+    }
+
+    #[test]
+    fn validate_required_field_whitespace() {
+        let mut errors = Vec::new();
+        validate_required_manifest_field("name", "  ", &mut errors);
+        assert_eq!(errors.len(), 1);
+    }
+
+    // --- build_manifest_permissions ---
+
+    #[test]
+    fn build_permissions_valid() {
+        let mut errors = Vec::new();
+        let perms =
+            build_manifest_permissions(&["read".to_string(), "write".to_string()], &mut errors);
+        assert!(errors.is_empty());
+        assert_eq!(perms.len(), 2);
+    }
+
+    #[test]
+    fn build_permissions_invalid() {
+        let mut errors = Vec::new();
+        let perms = build_manifest_permissions(&["admin".to_string()], &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert!(perms.is_empty());
+    }
+
+    #[test]
+    fn build_permissions_empty_string() {
+        let mut errors = Vec::new();
+        let _ = build_manifest_permissions(&["  ".to_string()], &mut errors);
+        assert_eq!(errors.len(), 1);
+    }
+
+    #[test]
+    fn build_permissions_duplicate() {
+        let mut errors = Vec::new();
+        let _ = build_manifest_permissions(&["read".to_string(), "read".to_string()], &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(
+            &errors[0],
+            PluginManifestValidationError::DuplicatePermission { .. }
+        ));
+    }
+
+    // --- parse_install_source ---
+
+    #[test]
+    fn parse_install_source_https() {
+        let result = parse_install_source("https://github.com/test/repo.git").unwrap();
+        assert!(matches!(result, PluginInstallSource::GitUrl { .. }));
+    }
+
+    #[test]
+    fn parse_install_source_git_ssh() {
+        let result = parse_install_source("git@github.com:test/repo.git").unwrap();
+        assert!(matches!(result, PluginInstallSource::GitUrl { .. }));
+    }
+
+    #[test]
+    fn parse_install_source_git_extension() {
+        let result = parse_install_source("some/path/repo.git").unwrap();
+        assert!(matches!(result, PluginInstallSource::GitUrl { .. }));
+    }
+
+    #[test]
+    fn parse_install_source_local_not_found() {
+        let result = parse_install_source("/nonexistent/path/to/plugin");
+        assert!(result.is_err());
+    }
+
+    // --- discover_plugin_dirs ---
+
+    #[test]
+    fn discover_plugin_dirs_empty_root() {
+        let dir = temp_dir("discover-empty");
+        fs::create_dir_all(&dir).unwrap();
+        let dirs = discover_plugin_dirs(&dir).unwrap();
+        assert!(dirs.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn discover_plugin_dirs_nonexistent_root() {
+        let dir = temp_dir("discover-nonexistent");
+        let dirs = discover_plugin_dirs(&dir).unwrap();
+        assert!(dirs.is_empty());
+    }
+
+    #[test]
+    fn discover_plugin_dirs_finds_manifests() {
+        let dir = temp_dir("discover-manifests");
+        let plugin_dir = dir.join("my-plugin");
+        write_file(
+            &plugin_dir.join("plugin.json"),
+            r#"{"name":"test","version":"1.0","description":"d"}"#,
+        );
+        let dirs = discover_plugin_dirs(&dir).unwrap();
+        assert_eq!(dirs.len(), 1);
+        assert_eq!(dirs[0], plugin_dir);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn discover_plugin_dirs_skips_files() {
+        let dir = temp_dir("discover-skip-files");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("not-a-dir.txt"), "data").unwrap();
+        let dirs = discover_plugin_dirs(&dir).unwrap();
+        assert!(dirs.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- plugin_manifest_path ---
+
+    #[test]
+    fn plugin_manifest_path_direct() {
+        let dir = temp_dir("manifest-direct");
+        write_file(&dir.join("plugin.json"), "{}");
+        let path = plugin_manifest_path(&dir).unwrap();
+        assert_eq!(path, dir.join("plugin.json"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plugin_manifest_path_packaged() {
+        let dir = temp_dir("manifest-packaged");
+        write_file(&dir.join(".colotcook-plugin/plugin.json"), "{}");
+        let path = plugin_manifest_path(&dir).unwrap();
+        assert!(path.to_string_lossy().contains(".colotcook-plugin"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plugin_manifest_path_legacy() {
+        let dir = temp_dir("manifest-legacy");
+        write_file(&dir.join(".claude-plugin/plugin.json"), "{}");
+        let path = plugin_manifest_path(&dir).unwrap();
+        assert!(path.to_string_lossy().contains(".claude-plugin"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plugin_manifest_path_not_found() {
+        let dir = temp_dir("manifest-missing");
+        fs::create_dir_all(&dir).unwrap();
+        let result = plugin_manifest_path(&dir);
+        assert!(result.is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- copy_dir_all ---
+
+    #[test]
+    fn copy_dir_all_recursive() {
+        let src = temp_dir("copy-src");
+        let dst = temp_dir("copy-dst");
+        write_file(&src.join("file.txt"), "content");
+        write_file(&src.join("sub/nested.txt"), "nested");
+
+        copy_dir_all(&src, &dst).unwrap();
+
+        assert_eq!(fs::read_to_string(dst.join("file.txt")).unwrap(), "content");
+        assert_eq!(
+            fs::read_to_string(dst.join("sub/nested.txt")).unwrap(),
+            "nested"
+        );
+
+        let _ = fs::remove_dir_all(&src);
+        let _ = fs::remove_dir_all(&dst);
+    }
+
+    // --- update_settings_json ---
+
+    #[test]
+    fn update_settings_json_creates_file() {
+        let dir = temp_dir("settings-create");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+
+        update_settings_json(&path, |root| {
+            root.insert("key".to_string(), Value::String("value".to_string()));
+        })
+        .unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("key"));
+        assert!(contents.contains("value"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn update_settings_json_updates_existing() {
+        let dir = temp_dir("settings-update");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(&path, r#"{"existing": true}"#).unwrap();
+
+        update_settings_json(&path, |root| {
+            root.insert("new_key".to_string(), Value::Bool(false));
+        })
+        .unwrap();
+
+        let contents: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(contents["existing"], Value::Bool(true));
+        assert_eq!(contents["new_key"], Value::Bool(false));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn update_settings_json_empty_file() {
+        let dir = temp_dir("settings-empty");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(&path, "").unwrap();
+
+        update_settings_json(&path, |root| {
+            root.insert("x".to_string(), Value::Null);
+        })
+        .unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("x"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- ensure_object ---
+
+    #[test]
+    fn ensure_object_creates_when_missing() {
+        let mut root = Map::new();
+        let obj = ensure_object(&mut root, "nested");
+        obj.insert("key".to_string(), Value::Bool(true));
+        assert!(root.get("nested").unwrap().is_object());
+    }
+
+    #[test]
+    fn ensure_object_reuses_existing() {
+        let mut root = Map::new();
+        let mut inner = Map::new();
+        inner.insert("existing".to_string(), Value::Bool(true));
+        root.insert("nested".to_string(), Value::Object(inner));
+
+        let obj = ensure_object(&mut root, "nested");
+        assert_eq!(obj.get("existing"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn ensure_object_replaces_non_object() {
+        let mut root = Map::new();
+        root.insert("nested".to_string(), Value::String("not an object".into()));
+        let obj = ensure_object(&mut root, "nested");
+        assert!(obj.is_empty());
+    }
+
+    // --- resolve_hooks ---
+
+    #[test]
+    fn resolve_hooks_resolves_paths() {
+        let hooks = PluginHooks {
+            pre_tool_use: vec!["./hook.sh".to_string()],
+            post_tool_use: vec!["echo done".to_string()],
+            post_tool_use_failure: vec![],
+        };
+        let resolved = resolve_hooks(Path::new("/plugin/root"), &hooks);
+        assert!(resolved.pre_tool_use[0].contains("/plugin/root"));
+        assert_eq!(resolved.post_tool_use[0], "echo done");
+    }
+
+    // --- resolve_lifecycle ---
+
+    #[test]
+    fn resolve_lifecycle_resolves_paths() {
+        let lifecycle = PluginLifecycle {
+            init: vec!["./init.sh".to_string()],
+            shutdown: vec!["echo bye".to_string()],
+        };
+        let resolved = resolve_lifecycle(Path::new("/root"), &lifecycle);
+        assert!(resolved.init[0].contains("/root"));
+        assert_eq!(resolved.shutdown[0], "echo bye");
+    }
+
+    // --- validate_hook_paths ---
+
+    #[test]
+    fn validate_hook_paths_none_root() {
+        let hooks = PluginHooks::default();
+        assert!(validate_hook_paths(None, &hooks).is_ok());
+    }
+
+    #[test]
+    fn validate_hook_paths_literal_command() {
+        let hooks = PluginHooks {
+            pre_tool_use: vec!["echo ok".to_string()],
+            post_tool_use: vec![],
+            post_tool_use_failure: vec![],
+        };
+        let dir = temp_dir("hook-literal");
+        fs::create_dir_all(&dir).unwrap();
+        assert!(validate_hook_paths(Some(&dir), &hooks).is_ok());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- validate_lifecycle_paths ---
+
+    #[test]
+    fn validate_lifecycle_paths_none_root() {
+        let lifecycle = PluginLifecycle::default();
+        assert!(validate_lifecycle_paths(None, &lifecycle).is_ok());
+    }
+
+    // --- validate_tool_paths ---
+
+    #[test]
+    fn validate_tool_paths_none_root() {
+        assert!(validate_tool_paths(None, &[]).is_ok());
+    }
+
+    // --- validate_command_path ---
+
+    #[test]
+    fn validate_command_path_literal() {
+        let dir = temp_dir("cmd-literal");
+        fs::create_dir_all(&dir).unwrap();
+        assert!(validate_command_path(&dir, "echo ok", "hook").is_ok());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn validate_command_path_missing_file() {
+        let dir = temp_dir("cmd-missing");
+        fs::create_dir_all(&dir).unwrap();
+        let result = validate_command_path(&dir, "./nonexistent.sh", "hook");
+        assert!(result.is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn validate_command_path_is_directory() {
+        let dir = temp_dir("cmd-is-dir");
+        let subdir = dir.join("subdir");
+        fs::create_dir_all(&subdir).unwrap();
+        let result = validate_command_path(&dir, "./subdir", "hook");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must point to a file"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- validate_command_entry ---
+
+    #[test]
+    fn validate_command_entry_empty() {
+        let mut errors = Vec::new();
+        validate_command_entry(Path::new("/tmp"), "  ", "hook", &mut errors);
+        assert_eq!(errors.len(), 1);
+    }
+
+    #[test]
+    fn validate_command_entry_literal_ok() {
+        let mut errors = Vec::new();
+        validate_command_entry(Path::new("/tmp"), "echo hello", "hook", &mut errors);
+        assert!(errors.is_empty());
+    }
+
+    // --- resolve_local_source ---
+
+    #[test]
+    fn resolve_local_source_exists() {
+        let dir = temp_dir("local-source");
+        fs::create_dir_all(&dir).unwrap();
+        let result = resolve_local_source(&dir.display().to_string());
+        assert!(result.is_ok());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_local_source_not_found() {
+        let result = resolve_local_source("/nonexistent/path");
+        assert!(result.is_err());
+    }
+
+    // --- materialize_source ---
+
+    #[test]
+    fn materialize_source_local_path() {
+        let dir = temp_dir("materialize-local");
+        fs::create_dir_all(&dir).unwrap();
+        let source = PluginInstallSource::LocalPath { path: dir.clone() };
+        let result = materialize_source(&source, &temp_dir("materialize-tmp")).unwrap();
+        assert_eq!(result, dir);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- build_manifest_tools ---
+
+    #[test]
+    fn build_manifest_tools_valid() {
+        let dir = temp_dir("tools-valid");
+        fs::create_dir_all(&dir).unwrap();
+        let mut errors = Vec::new();
+        let tools = build_manifest_tools(
+            &dir,
+            vec![crate::types::RawPluginToolManifest {
+                name: "my-tool".to_string(),
+                description: "a tool".to_string(),
+                input_schema: serde_json::json!({"type": "object"}),
+                command: "echo run".to_string(),
+                args: vec![],
+                required_permission: "read-only".to_string(),
+            }],
+            &mut errors,
+        );
+        assert!(errors.is_empty());
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].name, "my-tool");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn build_manifest_tools_empty_name() {
+        let mut errors = Vec::new();
+        let tools = build_manifest_tools(
+            Path::new("/tmp"),
+            vec![crate::types::RawPluginToolManifest {
+                name: "  ".to_string(),
+                description: "d".to_string(),
+                input_schema: serde_json::json!({"type": "object"}),
+                command: "echo".to_string(),
+                args: vec![],
+                required_permission: "read-only".to_string(),
+            }],
+            &mut errors,
+        );
+        assert!(!errors.is_empty());
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn build_manifest_tools_duplicate() {
+        let mut errors = Vec::new();
+        let _ = build_manifest_tools(
+            Path::new("/tmp"),
+            vec![
+                crate::types::RawPluginToolManifest {
+                    name: "dup".to_string(),
+                    description: "d".to_string(),
+                    input_schema: serde_json::json!({"type": "object"}),
+                    command: "echo".to_string(),
+                    args: vec![],
+                    required_permission: "read-only".to_string(),
+                },
+                crate::types::RawPluginToolManifest {
+                    name: "dup".to_string(),
+                    description: "d".to_string(),
+                    input_schema: serde_json::json!({"type": "object"}),
+                    command: "echo".to_string(),
+                    args: vec![],
+                    required_permission: "read-only".to_string(),
+                },
+            ],
+            &mut errors,
+        );
+        assert!(errors
+            .iter()
+            .any(|e| matches!(e, PluginManifestValidationError::DuplicateEntry { .. })));
+    }
+
+    #[test]
+    fn build_manifest_tools_invalid_schema() {
+        let mut errors = Vec::new();
+        let _ = build_manifest_tools(
+            Path::new("/tmp"),
+            vec![crate::types::RawPluginToolManifest {
+                name: "tool".to_string(),
+                description: "d".to_string(),
+                input_schema: serde_json::json!("not an object"),
+                command: "echo".to_string(),
+                args: vec![],
+                required_permission: "read-only".to_string(),
+            }],
+            &mut errors,
+        );
+        assert!(errors.iter().any(|e| matches!(
+            e,
+            PluginManifestValidationError::InvalidToolInputSchema { .. }
+        )));
+    }
+
+    #[test]
+    fn build_manifest_tools_invalid_permission() {
+        let mut errors = Vec::new();
+        let _ = build_manifest_tools(
+            Path::new("/tmp"),
+            vec![crate::types::RawPluginToolManifest {
+                name: "tool".to_string(),
+                description: "d".to_string(),
+                input_schema: serde_json::json!({"type": "object"}),
+                command: "echo".to_string(),
+                args: vec![],
+                required_permission: "invalid-perm".to_string(),
+            }],
+            &mut errors,
+        );
+        assert!(errors.iter().any(|e| matches!(
+            e,
+            PluginManifestValidationError::InvalidToolRequiredPermission { .. }
+        )));
+    }
+
+    // --- build_manifest_commands ---
+
+    #[test]
+    fn build_manifest_commands_valid() {
+        let mut errors = Vec::new();
+        let cmds = build_manifest_commands(
+            Path::new("/tmp"),
+            vec![PluginCommandManifest {
+                name: "cmd".to_string(),
+                description: "a command".to_string(),
+                command: "echo run".to_string(),
+            }],
+            &mut errors,
+        );
+        assert!(errors.is_empty());
+        assert_eq!(cmds.len(), 1);
+    }
+
+    #[test]
+    fn build_manifest_commands_empty_name() {
+        let mut errors = Vec::new();
+        let _ = build_manifest_commands(
+            Path::new("/tmp"),
+            vec![PluginCommandManifest {
+                name: "  ".to_string(),
+                description: "d".to_string(),
+                command: "echo".to_string(),
+            }],
+            &mut errors,
+        );
+        assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn build_manifest_commands_duplicate() {
+        let mut errors = Vec::new();
+        let _ = build_manifest_commands(
+            Path::new("/tmp"),
+            vec![
+                PluginCommandManifest {
+                    name: "dup".to_string(),
+                    description: "d".to_string(),
+                    command: "echo".to_string(),
+                },
+                PluginCommandManifest {
+                    name: "dup".to_string(),
+                    description: "d".to_string(),
+                    command: "echo".to_string(),
+                },
+            ],
+            &mut errors,
+        );
+        assert!(errors
+            .iter()
+            .any(|e| matches!(e, PluginManifestValidationError::DuplicateEntry { .. })));
+    }
+
+    // --- load_plugin_from_directory ---
+
+    #[test]
+    fn load_plugin_from_directory_valid() {
+        let dir = temp_dir("load-valid");
+        write_file(
+            &dir.join("plugin.json"),
+            r#"{"name":"test","version":"1.0.0","description":"Test plugin"}"#,
+        );
+        let manifest = load_plugin_from_directory(&dir).unwrap();
+        assert_eq!(manifest.name, "test");
+        assert_eq!(manifest.version, "1.0.0");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_plugin_from_directory_missing_manifest() {
+        let dir = temp_dir("load-missing");
+        fs::create_dir_all(&dir).unwrap();
+        let result = load_plugin_from_directory(&dir);
+        assert!(result.is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_plugin_from_directory_invalid_json() {
+        let dir = temp_dir("load-invalid-json");
+        write_file(&dir.join("plugin.json"), "not json");
+        let result = load_plugin_from_directory(&dir);
+        assert!(result.is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_plugin_from_directory_empty_name() {
+        let dir = temp_dir("load-empty-name");
+        write_file(
+            &dir.join("plugin.json"),
+            r#"{"name":"","version":"1.0","description":"test"}"#,
+        );
+        let result = load_plugin_from_directory(&dir);
+        assert!(result.is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- unix_time_ms ---
+
+    #[test]
+    fn unix_time_ms_is_positive() {
+        assert!(unix_time_ms() > 0);
+    }
+
+    // --- load_plugin_definition ---
+
+    #[test]
+    fn load_plugin_definition_builtin() {
+        let dir = temp_dir("def-builtin");
+        write_file(
+            &dir.join("plugin.json"),
+            r#"{"name":"test","version":"1.0.0","description":"d"}"#,
+        );
+        let def = load_plugin_definition(&dir, PluginKind::Builtin, "src".to_string(), "builtin")
+            .unwrap();
+        assert_eq!(def.metadata().kind, PluginKind::Builtin);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_plugin_definition_bundled() {
+        let dir = temp_dir("def-bundled");
+        write_file(
+            &dir.join("plugin.json"),
+            r#"{"name":"test","version":"1.0.0","description":"d"}"#,
+        );
+        let def = load_plugin_definition(&dir, PluginKind::Bundled, "src".to_string(), "bundled")
+            .unwrap();
+        assert_eq!(def.metadata().kind, PluginKind::Bundled);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_plugin_definition_external() {
+        let dir = temp_dir("def-external");
+        write_file(
+            &dir.join("plugin.json"),
+            r#"{"name":"test","version":"1.0.0","description":"d"}"#,
+        );
+        let def = load_plugin_definition(&dir, PluginKind::External, "src".to_string(), "external")
+            .unwrap();
+        assert_eq!(def.metadata().kind, PluginKind::External);
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

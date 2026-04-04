@@ -980,17 +980,15 @@ impl StringExt for String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_chat_completion_request, chat_completions_endpoint, normalize_finish_reason,
-        openai_tool_choice, parse_tool_arguments, OpenAiCompatClient, OpenAiCompatConfig,
-    };
+    use super::*;
     use crate::error::ApiError;
     use crate::types::{
-        InputContentBlock, InputMessage, MessageRequest, ToolChoice, ToolDefinition,
-        ToolResultContentBlock,
+        ContentBlockDelta, InputContentBlock, InputMessage, MessageRequest, OutputContentBlock,
+        ToolChoice, ToolDefinition, ToolResultContentBlock,
     };
     use serde_json::json;
     use std::sync::{Mutex, OnceLock};
+    use std::time::Duration;
 
     #[test]
     fn request_translation_uses_openai_compatible_shape() {
@@ -1091,5 +1089,725 @@ mod tests {
     fn normalizes_stop_reasons() {
         assert_eq!(normalize_finish_reason("stop"), "end_turn");
         assert_eq!(normalize_finish_reason("tool_calls"), "tool_use");
+    }
+
+    #[test]
+    fn normalizes_stop_reason_passthrough() {
+        assert_eq!(normalize_finish_reason("length"), "length");
+        assert_eq!(normalize_finish_reason("content_filter"), "content_filter");
+    }
+
+    // --- OpenAiCompatConfig ---
+
+    #[test]
+    fn config_xai() {
+        let config = OpenAiCompatConfig::xai();
+        assert_eq!(config.provider_name, "xAI");
+        assert_eq!(config.default_base_url, DEFAULT_XAI_BASE_URL);
+        assert!(!config.allows_empty_key());
+    }
+
+    #[test]
+    fn config_openai() {
+        let config = OpenAiCompatConfig::openai();
+        assert_eq!(config.provider_name, "OpenAI");
+        assert_eq!(config.default_base_url, DEFAULT_OPENAI_BASE_URL);
+        assert!(!config.allows_empty_key());
+    }
+
+    #[test]
+    fn config_gemini() {
+        let config = OpenAiCompatConfig::gemini();
+        assert_eq!(config.provider_name, "Gemini");
+        assert_eq!(config.default_base_url, DEFAULT_GEMINI_BASE_URL);
+        assert!(!config.allows_empty_key());
+    }
+
+    #[test]
+    fn config_ollama() {
+        let config = OpenAiCompatConfig::ollama();
+        assert_eq!(config.provider_name, "Ollama");
+        assert_eq!(config.default_base_url, DEFAULT_OLLAMA_BASE_URL);
+        assert!(config.allows_empty_key());
+    }
+
+    #[test]
+    fn config_credential_env_vars() {
+        assert_eq!(
+            OpenAiCompatConfig::xai().credential_env_vars(),
+            &["XAI_API_KEY"]
+        );
+        assert_eq!(
+            OpenAiCompatConfig::openai().credential_env_vars(),
+            &["OPENAI_API_KEY"]
+        );
+        assert_eq!(
+            OpenAiCompatConfig::gemini().credential_env_vars(),
+            &["GEMINI_API_KEY", "GOOGLE_API_KEY"]
+        );
+        assert_eq!(
+            OpenAiCompatConfig::ollama().credential_env_vars(),
+            &["OLLAMA_API_KEY"]
+        );
+    }
+
+    #[test]
+    fn config_unknown_provider_empty_env_vars() {
+        let config = OpenAiCompatConfig {
+            provider_name: "Unknown",
+            api_key_env: "X",
+            base_url_env: "X",
+            default_base_url: "http://localhost",
+        };
+        assert!(config.credential_env_vars().is_empty());
+    }
+
+    // --- OpenAiCompatClient construction ---
+
+    #[test]
+    fn client_new() {
+        let client = OpenAiCompatClient::new("test-key", OpenAiCompatConfig::xai());
+        assert_eq!(client.api_key, "test-key");
+        assert!(client.base_url.contains("x.ai"));
+    }
+
+    #[test]
+    fn client_with_base_url() {
+        let client = OpenAiCompatClient::new("key", OpenAiCompatConfig::xai())
+            .with_base_url("http://custom:8080");
+        assert_eq!(client.base_url, "http://custom:8080");
+    }
+
+    #[test]
+    fn client_with_retry_policy() {
+        let client = OpenAiCompatClient::new("key", OpenAiCompatConfig::xai()).with_retry_policy(
+            5,
+            Duration::from_millis(100),
+            Duration::from_secs(10),
+        );
+        assert_eq!(client.max_retries, 5);
+        assert_eq!(client.initial_backoff, Duration::from_millis(100));
+        assert_eq!(client.max_backoff, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn client_from_env_ollama_no_key() {
+        let _lock = env_lock();
+        std::env::remove_var("OLLAMA_API_KEY");
+        let client = OpenAiCompatClient::from_env(OpenAiCompatConfig::ollama());
+        assert!(client.is_ok());
+    }
+
+    // --- backoff_for_attempt ---
+
+    #[test]
+    fn backoff_first_attempt() {
+        let client = OpenAiCompatClient::new("k", OpenAiCompatConfig::xai());
+        let backoff = client.backoff_for_attempt(1).unwrap();
+        assert_eq!(backoff, DEFAULT_INITIAL_BACKOFF);
+    }
+
+    #[test]
+    fn backoff_second_attempt() {
+        let client = OpenAiCompatClient::new("k", OpenAiCompatConfig::xai());
+        let backoff = client.backoff_for_attempt(2).unwrap();
+        assert_eq!(backoff, DEFAULT_INITIAL_BACKOFF * 2);
+    }
+
+    #[test]
+    fn backoff_capped_at_max() {
+        let client = OpenAiCompatClient::new("k", OpenAiCompatConfig::xai()).with_retry_policy(
+            10,
+            Duration::from_millis(100),
+            Duration::from_millis(500),
+        );
+        let backoff = client.backoff_for_attempt(10).unwrap();
+        assert!(backoff <= Duration::from_millis(500));
+    }
+
+    // --- SSE frame parsing ---
+
+    use super::{next_sse_frame, parse_sse_frame, ChatCompletionChunk};
+
+    #[test]
+    fn next_sse_frame_lf_separator() {
+        let mut buffer = b"data: hello\n\nrest".to_vec();
+        let frame = next_sse_frame(&mut buffer);
+        assert_eq!(frame, Some("data: hello".to_string()));
+        assert_eq!(buffer, b"rest");
+    }
+
+    #[test]
+    fn next_sse_frame_crlf_separator() {
+        let mut buffer = b"data: hello\r\n\r\nrest".to_vec();
+        let frame = next_sse_frame(&mut buffer);
+        assert_eq!(frame, Some("data: hello".to_string()));
+        assert_eq!(buffer, b"rest");
+    }
+
+    #[test]
+    fn next_sse_frame_no_separator() {
+        let mut buffer = b"data: partial".to_vec();
+        let frame = next_sse_frame(&mut buffer);
+        assert!(frame.is_none());
+    }
+
+    #[test]
+    fn parse_sse_frame_empty() {
+        assert!(parse_sse_frame("").unwrap().is_none());
+    }
+
+    #[test]
+    fn parse_sse_frame_comment() {
+        assert!(parse_sse_frame(": this is a comment").unwrap().is_none());
+    }
+
+    #[test]
+    fn parse_sse_frame_done() {
+        assert!(parse_sse_frame("data: [DONE]").unwrap().is_none());
+    }
+
+    #[test]
+    fn parse_sse_frame_valid_chunk() {
+        let json = r#"data: {"id":"1","model":"gpt","choices":[]}"#;
+        let chunk = parse_sse_frame(json).unwrap();
+        assert!(chunk.is_some());
+        assert_eq!(chunk.unwrap().id, "1");
+    }
+
+    #[test]
+    fn parse_sse_frame_no_data_prefix() {
+        assert!(parse_sse_frame("event: ping").unwrap().is_none());
+    }
+
+    #[test]
+    fn parse_sse_frame_invalid_json_errors() {
+        let result = parse_sse_frame("data: not-json");
+        assert!(result.is_err());
+    }
+
+    // --- normalize_response ---
+
+    use super::normalize_response;
+
+    #[test]
+    fn normalize_response_text_only() {
+        let response = super::ChatCompletionResponse {
+            id: "id1".to_string(),
+            model: "gpt-4o".to_string(),
+            choices: vec![super::ChatChoice {
+                message: super::ChatMessage {
+                    role: "assistant".to_string(),
+                    content: Some("hello world".to_string()),
+                    tool_calls: vec![],
+                },
+                finish_reason: Some("stop".to_string()),
+            }],
+            usage: Some(super::OpenAiUsage {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+            }),
+        };
+        let result = normalize_response("gpt-4o", response).unwrap();
+        assert_eq!(result.id, "id1");
+        assert_eq!(result.role, "assistant");
+        assert_eq!(result.content.len(), 1);
+        assert_eq!(result.stop_reason, Some("end_turn".to_string()));
+        assert_eq!(result.usage.input_tokens, 10);
+        assert_eq!(result.usage.output_tokens, 5);
+    }
+
+    #[test]
+    fn normalize_response_with_tool_calls() {
+        let response = super::ChatCompletionResponse {
+            id: "id2".to_string(),
+            model: "gpt-4o".to_string(),
+            choices: vec![super::ChatChoice {
+                message: super::ChatMessage {
+                    role: "assistant".to_string(),
+                    content: None,
+                    tool_calls: vec![super::ResponseToolCall {
+                        id: "call_1".to_string(),
+                        function: super::ResponseToolFunction {
+                            name: "weather".to_string(),
+                            arguments: r#"{"city":"Paris"}"#.to_string(),
+                        },
+                    }],
+                },
+                finish_reason: Some("tool_calls".to_string()),
+            }],
+            usage: None,
+        };
+        let result = normalize_response("gpt-4o", response).unwrap();
+        assert_eq!(result.content.len(), 1);
+        assert_eq!(result.stop_reason, Some("tool_use".to_string()));
+    }
+
+    #[test]
+    fn normalize_response_empty_choices_errors() {
+        let response = super::ChatCompletionResponse {
+            id: "id3".to_string(),
+            model: "gpt-4o".to_string(),
+            choices: vec![],
+            usage: None,
+        };
+        assert!(normalize_response("gpt-4o", response).is_err());
+    }
+
+    #[test]
+    fn normalize_response_empty_content_and_no_tools() {
+        let response = super::ChatCompletionResponse {
+            id: "id4".to_string(),
+            model: "gpt-4o".to_string(),
+            choices: vec![super::ChatChoice {
+                message: super::ChatMessage {
+                    role: "assistant".to_string(),
+                    content: Some(String::new()),
+                    tool_calls: vec![],
+                },
+                finish_reason: None,
+            }],
+            usage: None,
+        };
+        let result = normalize_response("gpt-4o", response).unwrap();
+        assert!(result.content.is_empty());
+    }
+
+    #[test]
+    fn normalize_response_empty_model_uses_request_model() {
+        let response = super::ChatCompletionResponse {
+            id: "id5".to_string(),
+            model: String::new(),
+            choices: vec![super::ChatChoice {
+                message: super::ChatMessage {
+                    role: "assistant".to_string(),
+                    content: Some("hi".to_string()),
+                    tool_calls: vec![],
+                },
+                finish_reason: Some("stop".to_string()),
+            }],
+            usage: None,
+        };
+        let result = normalize_response("my-model", response).unwrap();
+        assert_eq!(result.model, "my-model");
+    }
+
+    // --- translate_message ---
+
+    use super::translate_message;
+
+    #[test]
+    fn translate_user_text_message() {
+        let msg = InputMessage {
+            role: "user".to_string(),
+            content: vec![InputContentBlock::Text {
+                text: "hello".to_string(),
+            }],
+        };
+        let translated = translate_message(&msg);
+        assert_eq!(translated.len(), 1);
+        assert_eq!(translated[0]["role"], "user");
+        assert_eq!(translated[0]["content"], "hello");
+    }
+
+    #[test]
+    fn translate_assistant_text_message() {
+        let msg = InputMessage {
+            role: "assistant".to_string(),
+            content: vec![InputContentBlock::Text {
+                text: "answer".to_string(),
+            }],
+        };
+        let translated = translate_message(&msg);
+        assert_eq!(translated.len(), 1);
+        assert_eq!(translated[0]["role"], "assistant");
+    }
+
+    #[test]
+    fn translate_assistant_with_tool_calls() {
+        let msg = InputMessage {
+            role: "assistant".to_string(),
+            content: vec![InputContentBlock::ToolUse {
+                id: "t1".to_string(),
+                name: "bash".to_string(),
+                input: json!({"cmd": "ls"}),
+            }],
+        };
+        let translated = translate_message(&msg);
+        assert_eq!(translated.len(), 1);
+        assert!(translated[0]["tool_calls"].is_array());
+    }
+
+    #[test]
+    fn translate_assistant_empty_skips() {
+        let msg = InputMessage {
+            role: "assistant".to_string(),
+            content: vec![],
+        };
+        let translated = translate_message(&msg);
+        assert!(translated.is_empty());
+    }
+
+    #[test]
+    fn translate_tool_result_message() {
+        let msg = InputMessage {
+            role: "user".to_string(),
+            content: vec![InputContentBlock::ToolResult {
+                tool_use_id: "t1".to_string(),
+                content: vec![ToolResultContentBlock::Text {
+                    text: "result".to_string(),
+                }],
+                is_error: false,
+            }],
+        };
+        let translated = translate_message(&msg);
+        assert_eq!(translated.len(), 1);
+        assert_eq!(translated[0]["role"], "tool");
+    }
+
+    // --- flatten_tool_result_content ---
+
+    use super::flatten_tool_result_content;
+
+    #[test]
+    fn flatten_text_content() {
+        let content = vec![ToolResultContentBlock::Text {
+            text: "hello".to_string(),
+        }];
+        assert_eq!(flatten_tool_result_content(&content), "hello");
+    }
+
+    #[test]
+    fn flatten_json_content() {
+        let content = vec![ToolResultContentBlock::Json {
+            value: json!({"ok": true}),
+        }];
+        assert_eq!(flatten_tool_result_content(&content), r#"{"ok":true}"#);
+    }
+
+    #[test]
+    fn flatten_multiple_content() {
+        let content = vec![
+            ToolResultContentBlock::Text {
+                text: "a".to_string(),
+            },
+            ToolResultContentBlock::Text {
+                text: "b".to_string(),
+            },
+        ];
+        assert_eq!(flatten_tool_result_content(&content), "a\nb");
+    }
+
+    // --- openai_tool_definition ---
+
+    use super::openai_tool_definition;
+
+    #[test]
+    fn openai_tool_definition_shape() {
+        let tool = ToolDefinition {
+            name: "weather".to_string(),
+            description: Some("Get weather".to_string()),
+            input_schema: json!({"type": "object"}),
+        };
+        let result = openai_tool_definition(&tool);
+        assert_eq!(result["type"], "function");
+        assert_eq!(result["function"]["name"], "weather");
+    }
+
+    // --- build_chat_completion_request ---
+
+    #[test]
+    fn build_request_no_system_prompt() {
+        let payload = build_chat_completion_request(&MessageRequest {
+            model: "gpt-4o".to_string(),
+            max_tokens: 100,
+            messages: vec![InputMessage {
+                role: "user".to_string(),
+                content: vec![InputContentBlock::Text {
+                    text: "hi".to_string(),
+                }],
+            }],
+            system: None,
+            tools: None,
+            tool_choice: None,
+            stream: false,
+        });
+        assert_eq!(payload["messages"][0]["role"], "user");
+        assert!(payload.get("tools").is_none() || payload["tools"].is_null());
+    }
+
+    #[test]
+    fn build_request_empty_system_prompt_skipped() {
+        let payload = build_chat_completion_request(&MessageRequest {
+            model: "gpt-4o".to_string(),
+            max_tokens: 100,
+            messages: vec![InputMessage {
+                role: "user".to_string(),
+                content: vec![InputContentBlock::Text {
+                    text: "hi".to_string(),
+                }],
+            }],
+            system: Some(String::new()),
+            tools: None,
+            tool_choice: None,
+            stream: false,
+        });
+        // First message should be user, not system
+        assert_eq!(payload["messages"][0]["role"], "user");
+    }
+
+    // --- StreamState ---
+
+    use super::StreamState;
+
+    #[test]
+    fn stream_state_new() {
+        let state = StreamState::new("gpt-4o".to_string());
+        assert!(!state.message_started);
+        assert!(!state.text_started);
+        assert!(!state.finished);
+    }
+
+    #[test]
+    fn stream_state_finish_without_start() {
+        let mut state = StreamState::new("gpt-4o".to_string());
+        let events = state.finish().unwrap();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn stream_state_finish_twice() {
+        let mut state = StreamState::new("gpt-4o".to_string());
+        let _ = state.finish().unwrap();
+        let events = state.finish().unwrap();
+        assert!(events.is_empty());
+    }
+
+    // --- ToolCallState ---
+
+    use super::ToolCallState;
+
+    #[test]
+    fn tool_call_state_apply() {
+        let mut state = ToolCallState::default();
+        state.apply(super::DeltaToolCall {
+            index: 0,
+            id: Some("call_1".to_string()),
+            function: super::DeltaFunction {
+                name: Some("bash".to_string()),
+                arguments: Some("{\"cmd\":".to_string()),
+            },
+        });
+        assert_eq!(state.id, Some("call_1".to_string()));
+        assert_eq!(state.name, Some("bash".to_string()));
+        assert_eq!(state.arguments, "{\"cmd\":");
+    }
+
+    #[test]
+    fn tool_call_state_apply_incremental() {
+        let mut state = ToolCallState::default();
+        state.apply(super::DeltaToolCall {
+            index: 0,
+            id: Some("c1".to_string()),
+            function: super::DeltaFunction {
+                name: Some("test".to_string()),
+                arguments: Some("{\"a\":".to_string()),
+            },
+        });
+        state.apply(super::DeltaToolCall {
+            index: 0,
+            id: None,
+            function: super::DeltaFunction {
+                name: None,
+                arguments: Some("1}".to_string()),
+            },
+        });
+        assert_eq!(state.arguments, "{\"a\":1}");
+    }
+
+    #[test]
+    fn tool_call_state_block_index() {
+        let mut state = ToolCallState::default();
+        state.openai_index = 2;
+        assert_eq!(state.block_index(), 3);
+    }
+
+    #[test]
+    fn tool_call_state_start_event_no_name() {
+        let state = ToolCallState::default();
+        assert!(state.start_event().unwrap().is_none());
+    }
+
+    #[test]
+    fn tool_call_state_start_event_with_name() {
+        let mut state = ToolCallState::default();
+        state.name = Some("bash".to_string());
+        let event = state.start_event().unwrap().unwrap();
+        assert!(matches!(
+            event.content_block,
+            OutputContentBlock::ToolUse { name, .. } if name == "bash"
+        ));
+    }
+
+    #[test]
+    fn tool_call_state_start_event_default_id() {
+        let mut state = ToolCallState::default();
+        state.name = Some("test".to_string());
+        let event = state.start_event().unwrap().unwrap();
+        if let OutputContentBlock::ToolUse { id, .. } = event.content_block {
+            assert!(id.starts_with("tool_call_"));
+        }
+    }
+
+    #[test]
+    fn tool_call_state_delta_event_no_new_args() {
+        let mut state = ToolCallState::default();
+        assert!(state.delta_event().is_none());
+    }
+
+    #[test]
+    fn tool_call_state_delta_event_with_args() {
+        let mut state = ToolCallState::default();
+        state.arguments = "{\"a\":1}".to_string();
+        let event = state.delta_event().unwrap();
+        assert_eq!(state.emitted_len, 7);
+        if let ContentBlockDelta::InputJsonDelta { partial_json } = event.delta {
+            assert_eq!(partial_json, "{\"a\":1}");
+        } else {
+            panic!("expected InputJsonDelta");
+        }
+        // Second call returns None
+        assert!(state.delta_event().is_none());
+    }
+
+    // --- is_retryable_status ---
+
+    use super::is_retryable_status;
+
+    #[test]
+    fn retryable_statuses() {
+        assert!(is_retryable_status(
+            reqwest::StatusCode::from_u16(429).unwrap()
+        ));
+        assert!(is_retryable_status(
+            reqwest::StatusCode::from_u16(500).unwrap()
+        ));
+        assert!(is_retryable_status(
+            reqwest::StatusCode::from_u16(502).unwrap()
+        ));
+        assert!(is_retryable_status(
+            reqwest::StatusCode::from_u16(503).unwrap()
+        ));
+        assert!(is_retryable_status(
+            reqwest::StatusCode::from_u16(504).unwrap()
+        ));
+        assert!(is_retryable_status(
+            reqwest::StatusCode::from_u16(408).unwrap()
+        ));
+        assert!(is_retryable_status(
+            reqwest::StatusCode::from_u16(409).unwrap()
+        ));
+    }
+
+    #[test]
+    fn non_retryable_statuses() {
+        assert!(!is_retryable_status(
+            reqwest::StatusCode::from_u16(200).unwrap()
+        ));
+        assert!(!is_retryable_status(
+            reqwest::StatusCode::from_u16(400).unwrap()
+        ));
+        assert!(!is_retryable_status(
+            reqwest::StatusCode::from_u16(401).unwrap()
+        ));
+        assert!(!is_retryable_status(
+            reqwest::StatusCode::from_u16(403).unwrap()
+        ));
+        assert!(!is_retryable_status(
+            reqwest::StatusCode::from_u16(404).unwrap()
+        ));
+    }
+
+    // --- StringExt ---
+
+    use super::StringExt;
+
+    #[test]
+    fn string_ext_if_empty_then_returns_original() {
+        assert_eq!(
+            "hello".to_string().if_empty_then("fallback".to_string()),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn string_ext_if_empty_then_returns_fallback() {
+        assert_eq!(
+            String::new().if_empty_then("fallback".to_string()),
+            "fallback"
+        );
+    }
+
+    // --- OpenAiSseParser ---
+
+    use super::OpenAiSseParser;
+
+    #[test]
+    fn sse_parser_accumulates_partial() {
+        let mut parser = OpenAiSseParser::new();
+        let events = parser.push(b"data: partial").unwrap();
+        assert!(events.is_empty()); // no frame boundary yet
+    }
+
+    #[test]
+    fn sse_parser_extracts_complete_frame() {
+        let mut parser = OpenAiSseParser::new();
+        let chunk = b"data: {\"id\":\"1\",\"model\":\"gpt\",\"choices\":[]}\n\n";
+        let events = parser.push(chunk).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].id, "1");
+    }
+
+    #[test]
+    fn sse_parser_done_signal_produces_nothing() {
+        let mut parser = OpenAiSseParser::new();
+        let events = parser.push(b"data: [DONE]\n\n").unwrap();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn sse_parser_multiple_frames() {
+        let mut parser = OpenAiSseParser::new();
+        let chunk = b"data: {\"id\":\"1\",\"model\":\"m\",\"choices\":[]}\n\ndata: {\"id\":\"2\",\"model\":\"m\",\"choices\":[]}\n\n";
+        let events = parser.push(chunk).unwrap();
+        assert_eq!(events.len(), 2);
+    }
+
+    // --- has_api_key ---
+
+    use super::has_api_key;
+
+    #[test]
+    fn has_api_key_missing() {
+        let _lock = env_lock();
+        std::env::remove_var("COLOTCOOK_TEST_MISSING_KEY");
+        assert!(!has_api_key("COLOTCOOK_TEST_MISSING_KEY"));
+    }
+
+    // --- read_base_url ---
+
+    use super::read_base_url;
+
+    #[test]
+    fn read_base_url_fallback() {
+        let _lock = env_lock();
+        std::env::remove_var("COLOTCOOK_TEST_BASE_URL");
+        let config = OpenAiCompatConfig {
+            provider_name: "Test",
+            api_key_env: "X",
+            base_url_env: "COLOTCOOK_TEST_BASE_URL",
+            default_base_url: "http://default.test",
+        };
+        assert_eq!(read_base_url(config), "http://default.test");
     }
 }
