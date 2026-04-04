@@ -1,5 +1,5 @@
-/// Execution tools: Notebook editing, Sleep, Brief/SendUserMessage,
-/// REPL, PowerShell, and shell command helpers.
+//! Execution tools: Notebook editing, `Sleep`, `Brief`/`SendUserMessage`,
+//! `REPL`, `PowerShell`, and shell command helpers.
 
 use std::path::Path;
 use std::process::Command;
@@ -8,15 +8,17 @@ use std::time::{Duration, Instant};
 use colotcook_runtime as runtime;
 use serde_json::{json, Value};
 
-use crate::types::{
-    BriefInput, BriefOutput, BriefStatus, NotebookCellType, NotebookEditInput,
-    NotebookEditMode, NotebookEditOutput, PowerShellInput, ReplInput, ReplOutput,
-    ResolvedAttachment, SleepInput, SleepOutput,
-};
 use crate::agent_tools::iso8601_now;
+use crate::types::{
+    BriefInput, BriefOutput, BriefStatus, NotebookCellType, NotebookEditInput, NotebookEditMode,
+    NotebookEditOutput, PowerShellInput, ReplInput, ReplOutput, ResolvedAttachment, SleepInput,
+    SleepOutput,
+};
 
 #[allow(clippy::too_many_lines)]
-pub(crate) fn execute_notebook_edit(input: NotebookEditInput) -> Result<NotebookEditOutput, String> {
+pub(crate) fn execute_notebook_edit(
+    input: NotebookEditInput,
+) -> Result<NotebookEditOutput, String> {
     let path = std::path::PathBuf::from(&input.notebook_path);
     if path.extension().and_then(|ext| ext.to_str()) != Some("ipynb") {
         return Err(String::from(
@@ -149,7 +151,11 @@ pub(crate) fn require_notebook_source(
     }
 }
 
-pub(crate) fn build_notebook_cell(cell_id: &str, cell_type: NotebookCellType, source: &str) -> Value {
+pub(crate) fn build_notebook_cell(
+    cell_id: &str,
+    cell_type: NotebookCellType,
+    source: &str,
+) -> Value {
     let mut cell = json!({
         "cell_type": match cell_type {
             NotebookCellType::Code => "code",
@@ -334,7 +340,6 @@ pub(crate) fn detect_first_command(commands: &[&'static str]) -> Option<&'static
         .find(|command| command_exists(command))
 }
 
-
 pub(crate) fn iso8601_timestamp() -> String {
     if let Ok(output) = Command::new("date")
         .args(["-u", "+%Y-%m-%dT%H:%M:%SZ"])
@@ -348,7 +353,9 @@ pub(crate) fn iso8601_timestamp() -> String {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-pub(crate) fn execute_powershell(input: PowerShellInput) -> std::io::Result<runtime::BashCommandOutput> {
+pub(crate) fn execute_powershell(
+    input: PowerShellInput,
+) -> std::io::Result<runtime::BashCommandOutput> {
     let _ = &input.description;
     let shell = detect_powershell_shell()?;
     execute_shell_command(
@@ -557,4 +564,3 @@ pub(crate) fn format_notebook_edit_mode(mode: NotebookEditMode) -> String {
 pub(crate) fn make_cell_id(index: usize) -> String {
     format!("cell-{}", index + 1)
 }
-

@@ -1,4 +1,4 @@
-/// Agent and skill discovery, rendering, and install.
+//! Agent and skill discovery, rendering, and install.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -6,12 +6,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::plugins_command::{
-    AgentSummary, DefinitionSource, InstalledSkill, SkillInstallSource,
-    SkillOrigin, SkillRoot, SkillSummary,
+    AgentSummary, DefinitionSource, InstalledSkill, SkillInstallSource, SkillOrigin, SkillRoot,
+    SkillSummary,
 };
 
-
-pub(crate) fn discover_definition_roots(cwd: &Path, leaf: &str) -> Vec<(DefinitionSource, PathBuf)> {
+pub(crate) fn discover_definition_roots(
+    cwd: &Path,
+    leaf: &str,
+) -> Vec<(DefinitionSource, PathBuf)> {
     let mut roots = Vec::new();
 
     for ancestor in cwd.ancestors() {
@@ -192,7 +194,10 @@ pub(crate) fn default_skill_install_root() -> std::io::Result<PathBuf> {
     ))
 }
 
-pub(crate) fn resolve_skill_install_source(source: &str, cwd: &Path) -> std::io::Result<SkillInstallSource> {
+pub(crate) fn resolve_skill_install_source(
+    source: &str,
+    cwd: &Path,
+) -> std::io::Result<SkillInstallSource> {
     let candidate = PathBuf::from(source);
     let source = if candidate.is_absolute() {
         candidate

@@ -1,4 +1,4 @@
-/// OAuth login/logout flow and CLI auth-source resolution.
+//! OAuth login/logout flow and CLI auth-source resolution.
 
 use std::env;
 use std::io::{self, Read, Write};
@@ -8,8 +8,8 @@ use colotcook_api as api;
 use colotcook_api::{resolve_startup_auth_source, AnthropicClient, AuthSource};
 use colotcook_runtime::{
     clear_oauth_credentials, generate_pkce_pair, generate_state,
-    parse_oauth_callback_request_target, save_oauth_credentials,
-    ConfigLoader, OAuthAuthorizationRequest, OAuthConfig, OAuthTokenExchangeRequest,
+    parse_oauth_callback_request_target, save_oauth_credentials, ConfigLoader,
+    OAuthAuthorizationRequest, OAuthConfig, OAuthTokenExchangeRequest,
 };
 
 use crate::util::open_browser;

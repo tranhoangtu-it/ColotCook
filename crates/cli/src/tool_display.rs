@@ -1,4 +1,4 @@
-/// Tool call and result formatting for terminal display.
+//! Tool call and result formatting for terminal display.
 
 use crate::util::{
     extract_tool_path, first_visible_line, summarize_tool_payload, truncate_for_summary,
@@ -222,9 +222,7 @@ fn format_write_result(icon: &str, parsed: &serde_json::Value) -> String {
 }
 
 /// Format a structured patch preview from diff hunks.
-pub(crate) fn format_structured_patch_preview(
-    parsed: &serde_json::Value,
-) -> Option<String> {
+pub(crate) fn format_structured_patch_preview(parsed: &serde_json::Value) -> Option<String> {
     let hunks = parsed.get("structuredPatch")?.as_array()?;
     let mut preview = Vec::new();
     for hunk in hunks.iter().take(2) {

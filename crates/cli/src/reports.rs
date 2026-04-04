@@ -1,20 +1,20 @@
-/// Report formatting: status, model, permissions, cost, sandbox, git, export, etc.
+//! Report formatting: status, model, permissions, cost, sandbox, git, export, etc.
 
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use colotcook_commands::render_slash_command_help;
-use colotcook_runtime::{
-    resolve_sandbox_status, ConfigLoader, ConfigSource, ContentBlock, MessageRole,
-    ProjectContext, Session, TokenUsage,
-};
 use colotcook_runtime as runtime;
+use colotcook_runtime::{
+    resolve_sandbox_status, ConfigLoader, ConfigSource, ContentBlock, MessageRole, ProjectContext,
+    Session, TokenUsage,
+};
 
+use crate::arg_parsing::{BUILD_TARGET, DEFAULT_DATE, GIT_SHA, VERSION};
 use crate::init::initialize_repo;
 use crate::session_management::{LATEST_SESSION_REFERENCE, PRIMARY_SESSION_EXTENSION};
 use crate::util::{indent_block, truncate_for_prompt};
-use crate::arg_parsing::{DEFAULT_DATE, VERSION, BUILD_TARGET, GIT_SHA};
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -86,9 +86,7 @@ impl GitWorkspaceSummary {
 // ── Git helpers ─────────────────────────────────────────────────────────────
 
 /// Parse the git status porcelain output into metadata (project root, branch).
-pub(crate) fn parse_git_status_metadata(
-    status: Option<&str>,
-) -> (Option<PathBuf>, Option<String>) {
+pub(crate) fn parse_git_status_metadata(status: Option<&str>) -> (Option<PathBuf>, Option<String>) {
     parse_git_status_metadata_for(
         &env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         status,
@@ -348,11 +346,7 @@ pub(crate) fn format_cost_report(usage: TokenUsage) -> String {
     )
 }
 
-pub(crate) fn format_resume_report(
-    session_path: &str,
-    message_count: usize,
-    turns: u32,
-) -> String {
+pub(crate) fn format_resume_report(session_path: &str, message_count: usize, turns: u32) -> String {
     format!(
         "Session resumed
   Session file     {session_path}
@@ -678,9 +672,7 @@ pub(crate) fn render_diff_report() -> Result<String, Box<dyn std::error::Error>>
     render_diff_report_for(&env::current_dir()?)
 }
 
-pub(crate) fn render_diff_report_for(
-    cwd: &Path,
-) -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn render_diff_report_for(cwd: &Path) -> Result<String, Box<dyn std::error::Error>> {
     let staged = run_git_diff_command_in(cwd, &["diff", "--cached"])?;
     let unstaged = run_git_diff_command_in(cwd, &["diff"])?;
     if staged.trim().is_empty() && unstaged.trim().is_empty() {
@@ -716,9 +708,7 @@ pub(crate) fn run_git_diff_command_in(
     Ok(String::from_utf8(output.stdout)?)
 }
 
-pub(crate) fn render_teleport_report(
-    target: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn render_teleport_report(target: &str) -> Result<String, Box<dyn std::error::Error>> {
     let cwd = env::current_dir()?;
 
     let file_list = Command::new("rg")
@@ -1013,4 +1003,3 @@ pub(crate) fn print_status_snapshot(
     );
     Ok(())
 }
-

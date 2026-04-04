@@ -8,23 +8,25 @@ use colotcook_runtime::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+pub mod agent_tools;
+mod execution_tools;
+mod file_tools;
+mod search_tools;
+mod session_tools;
+mod system_tools;
 mod types;
 mod web_tools;
-mod session_tools;
-pub mod agent_tools;
-mod search_tools;
-mod execution_tools;
-mod system_tools;
-mod file_tools;
 
-pub use agent_tools::{set_global_mcp_bridge, McpBridge, AgentSpawnRequest, AgentResult, AgentOrchestrator};
+pub use agent_tools::{
+    set_global_mcp_bridge, AgentOrchestrator, AgentResult, AgentSpawnRequest, McpBridge,
+};
 
 // Re-exports for tests (items moved to sub-modules)
 #[allow(unused_imports)]
 pub(crate) use agent_tools::{
     agent_permission_policy, allowed_tools_for_subagent, execute_agent_with_spawn,
-    final_assistant_text, persist_agent_terminal_state, push_output_block,
-    AgentJob, SubagentToolExecutor,
+    final_assistant_text, persist_agent_terminal_state, push_output_block, AgentJob,
+    SubagentToolExecutor,
 };
 #[allow(unused_imports)]
 pub(crate) use types::AgentInput;
@@ -577,14 +579,21 @@ pub fn mvp_tool_specs() -> Vec<ToolSpec> {
     ]
 }
 
-
 pub fn execute_tool(name: &str, input: &Value) -> Result<String, String> {
     match name {
         "bash" => from_value::<BashCommandInput>(input).and_then(run_bash),
-        "read_file" => from_value::<types::ReadFileInput>(input).and_then(|i| file_tools::run_read_file(i)),
-        "write_file" => from_value::<types::WriteFileInput>(input).and_then(|i| file_tools::run_write_file(i)),
-        "edit_file" => from_value::<types::EditFileInput>(input).and_then(|i| file_tools::run_edit_file(i)),
-        "glob_search" => from_value::<types::GlobSearchInputValue>(input).and_then(|i| file_tools::run_glob_search(i)),
+        "read_file" => {
+            from_value::<types::ReadFileInput>(input).and_then(file_tools::run_read_file)
+        }
+        "write_file" => {
+            from_value::<types::WriteFileInput>(input).and_then(file_tools::run_write_file)
+        }
+        "edit_file" => {
+            from_value::<types::EditFileInput>(input).and_then(file_tools::run_edit_file)
+        }
+        "glob_search" => {
+            from_value::<types::GlobSearchInputValue>(input).and_then(file_tools::run_glob_search)
+        }
         "grep_search" => from_value::<GrepSearchInput>(input).and_then(run_grep_search),
         "WebFetch" => from_value::<types::WebFetchInput>(input).and_then(run_web_fetch),
         "WebSearch" => from_value::<types::WebSearchInput>(input).and_then(run_web_search),
@@ -596,8 +605,12 @@ pub fn execute_tool(name: &str, input: &Value) -> Result<String, String> {
         "Sleep" => from_value::<types::SleepInput>(input).and_then(run_sleep),
         "SendUserMessage" | "Brief" => from_value::<types::BriefInput>(input).and_then(run_brief),
         "Config" => from_value::<types::ConfigInput>(input).and_then(run_config),
-        "EnterPlanMode" => from_value::<types::EnterPlanModeInput>(input).and_then(run_enter_plan_mode),
-        "ExitPlanMode" => from_value::<types::ExitPlanModeInput>(input).and_then(run_exit_plan_mode),
+        "EnterPlanMode" => {
+            from_value::<types::EnterPlanModeInput>(input).and_then(run_enter_plan_mode)
+        }
+        "ExitPlanMode" => {
+            from_value::<types::ExitPlanModeInput>(input).and_then(run_exit_plan_mode)
+        }
         "StructuredOutput" => {
             from_value::<types::StructuredOutputInput>(input).and_then(run_structured_output)
         }

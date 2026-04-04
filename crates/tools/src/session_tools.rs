@@ -1,4 +1,4 @@
-/// Session task management tools (TodoWrite) and Skill loading.
+//! Session task management tools (`TodoWrite`) and `Skill` loading.
 
 use crate::types::{
     SkillInput, SkillOutput, TodoItem, TodoStatus, TodoWriteInput, TodoWriteOutput,

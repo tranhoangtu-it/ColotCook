@@ -1,14 +1,13 @@
-/// Main slash command dispatcher and individual handlers.
+//! Main slash command dispatcher and individual handlers.
 
 use std::fmt::Write as _;
 
 use colotcook_runtime as runtime;
 use colotcook_runtime::{compact_session, CompactionConfig, Session};
 
-use crate::types::*;
-use crate::plugins_command::SlashCommandResult;
 use crate::help::render_slash_command_help;
-
+use crate::plugins_command::SlashCommandResult;
+use crate::types::SlashCommand;
 
 pub(crate) fn handle_cost(session: &Session) -> String {
     let mut output = String::new();

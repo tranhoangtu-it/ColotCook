@@ -1353,8 +1353,8 @@ mod tests {
 
     #[test]
     fn session_error_from_io_error_wraps_correctly() {
-        use std::io;
         use super::SessionError;
+        use std::io;
         let io_err = io::Error::new(io::ErrorKind::PermissionDenied, "no access");
         let session_err = SessionError::from(io_err);
         assert!(matches!(session_err, SessionError::Io(_)));

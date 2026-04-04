@@ -1,4 +1,4 @@
-/// Tool search functionality for deferred/specialized tools.
+//! Tool search functionality for deferred/specialized tools.
 
 use crate::types::{ToolSearchInput, ToolSearchOutput};
 use crate::{mvp_tool_specs, ToolSpec};
@@ -32,7 +32,11 @@ pub(crate) fn deferred_tool_specs() -> Vec<ToolSpec> {
         .collect()
 }
 
-pub(crate) fn search_tool_specs(query: &str, max_results: usize, specs: &[ToolSpec]) -> Vec<String> {
+pub(crate) fn search_tool_specs(
+    query: &str,
+    max_results: usize,
+    specs: &[ToolSpec],
+) -> Vec<String> {
     let lowered = query.to_lowercase();
     if let Some(selection) = lowered.strip_prefix("select:") {
         return selection

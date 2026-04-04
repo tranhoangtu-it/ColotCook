@@ -412,9 +412,7 @@ pub(crate) fn resolve_model_alias(model: &str) -> &str {
     }
 }
 
-pub(crate) fn normalize_allowed_tools(
-    values: &[String],
-) -> Result<Option<AllowedToolSet>, String> {
+pub(crate) fn normalize_allowed_tools(values: &[String]) -> Result<Option<AllowedToolSet>, String> {
     current_tool_registry()?.normalize_allowed_tools(values)
 }
 

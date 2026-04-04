@@ -23,45 +23,41 @@ use colotcook_commands::{
 };
 use colotcook_runtime as runtime;
 use colotcook_runtime::{
-    CompactionConfig, ConfigLoader, PermissionMode, Session, UsageTracker,
-    resolve_sandbox_status,
+    resolve_sandbox_status, CompactionConfig, ConfigLoader, PermissionMode, Session, UsageTracker,
 };
 
 use arg_parsing::{
-    parse_args, resolve_model_alias, default_permission_mode, permission_mode_from_label,
-    slash_command_completion_candidates_with_sessions, format_unknown_slash_command,
-    AllowedToolSet, CliAction, CliOutputFormat, VERSION,
+    default_permission_mode, format_unknown_slash_command, parse_args, permission_mode_from_label,
+    resolve_model_alias, slash_command_completion_candidates_with_sessions, AllowedToolSet,
+    CliAction, CliOutputFormat, VERSION,
 };
 use oauth_flow::{run_login, run_logout};
 use render::{Spinner, TerminalRenderer};
 use reports::{
-    format_auto_compaction_notice,
-    format_bughunter_report, format_commit_preflight_report, format_commit_skipped_report,
-    format_compact_report, format_cost_report, format_issue_report, format_model_report,
-    format_model_switch_report, format_permissions_report, format_permissions_switch_report,
-    format_pr_report, format_resume_report, format_sandbox_report, format_status_report,
-    format_ultraplan_report, init_claude_md, normalize_permission_mode,
-    parse_git_status_branch, parse_git_workspace_summary,
-    print_sandbox_status_snapshot, print_status_snapshot,
-    render_config_report, render_diff_report, render_diff_report_for, render_export_text,
-    render_last_tool_debug_report, render_memory_report, render_repl_help,
-    render_resume_usage, render_teleport_report, render_version_report, resolve_export_path,
-    resolve_git_branch_for, run_init, status_context, validate_no_args,
-    StatusUsage,
+    format_auto_compaction_notice, format_bughunter_report, format_commit_preflight_report,
+    format_commit_skipped_report, format_compact_report, format_cost_report, format_issue_report,
+    format_model_report, format_model_switch_report, format_permissions_report,
+    format_permissions_switch_report, format_pr_report, format_resume_report,
+    format_sandbox_report, format_status_report, format_ultraplan_report, init_claude_md,
+    normalize_permission_mode, parse_git_status_branch, parse_git_workspace_summary,
+    print_sandbox_status_snapshot, print_status_snapshot, render_config_report, render_diff_report,
+    render_diff_report_for, render_export_text, render_last_tool_debug_report,
+    render_memory_report, render_repl_help, render_resume_usage, render_teleport_report,
+    render_version_report, resolve_export_path, resolve_git_branch_for, run_init, status_context,
+    validate_no_args, StatusUsage,
 };
 use runtime_build::{
-    build_plugin_manager, build_runtime, build_system_prompt, BuiltRuntime,
-    CliPermissionPrompter, HookAbortMonitor,
-};
-use session_management::{
-    create_managed_session_handle, list_managed_sessions, render_session_list,
-    resolve_session_reference, SessionHandle,
-    LATEST_SESSION_REFERENCE, PRIMARY_SESSION_EXTENSION,
+    build_plugin_manager, build_runtime, build_system_prompt, BuiltRuntime, CliPermissionPrompter,
+    HookAbortMonitor,
 };
 use serde_json::json;
+use session_management::{
+    create_managed_session_handle, list_managed_sessions, render_session_list,
+    resolve_session_reference, SessionHandle, LATEST_SESSION_REFERENCE, PRIMARY_SESSION_EXTENSION,
+};
 use streaming::{
-    collect_prompt_cache_events, collect_tool_uses, collect_tool_results,
-    final_assistant_text, InternalPromptProgressReporter,
+    collect_prompt_cache_events, collect_tool_results, collect_tool_uses, final_assistant_text,
+    InternalPromptProgressReporter,
 };
 use util::git_output;
 
@@ -1360,9 +1356,9 @@ mod tests {
         slash_command_completion_candidates_with_sessions, status_context, validate_no_args,
         CliAction, CliOutputFormat, LiveCli, SlashCommand, StatusUsage,
     };
+    use crate::arg_parsing::filter_tool_specs;
     use crate::arg_parsing::DEFAULT_MODEL;
     use crate::reports::{parse_git_status_metadata_for, GitWorkspaceSummary};
-    use crate::arg_parsing::filter_tool_specs;
     use crate::runtime_build::{
         build_runtime_plugin_state_with_loader, build_runtime_with_plugin_state, permission_policy,
     };

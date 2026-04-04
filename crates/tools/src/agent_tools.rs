@@ -1,4 +1,4 @@
-/// Agent and sub-agent orchestration system.
+//! Agent and sub-agent orchestration system.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
@@ -12,14 +12,14 @@ use colotcook_api::{
 use colotcook_runtime as runtime;
 use colotcook_runtime::{
     load_system_prompt, ApiClient, ApiRequest, AssistantEvent, ContentBlock, ConversationMessage,
-    ConversationRuntime, MessageRole, PermissionMode, PermissionPolicy,
-    PromptCacheEvent, RuntimeError, Session, ToolError, ToolExecutor,
+    ConversationRuntime, MessageRole, PermissionMode, PermissionPolicy, PromptCacheEvent,
+    RuntimeError, Session, ToolError, ToolExecutor,
 };
 use serde_json::Value;
 
-use crate::types::{AgentInput, AgentOutput};
 use crate::search_tools::canonical_tool_token;
-use crate::{mvp_tool_specs, execute_tool, ToolSpec};
+use crate::types::{AgentInput, AgentOutput};
+use crate::{execute_tool, mvp_tool_specs, ToolSpec};
 
 /// Job descriptor for a sub-agent.
 #[derive(Debug, Clone)]
@@ -49,7 +49,10 @@ pub(crate) fn execute_agent(input: AgentInput) -> Result<AgentOutput, String> {
     execute_agent_with_spawn(input, spawn_agent_job)
 }
 
-pub(crate) fn execute_agent_with_spawn<F>(input: AgentInput, spawn_fn: F) -> Result<AgentOutput, String>
+pub(crate) fn execute_agent_with_spawn<F>(
+    input: AgentInput,
+    spawn_fn: F,
+) -> Result<AgentOutput, String>
 where
     F: FnOnce(AgentJob) -> Result<(), String>,
 {
@@ -523,7 +526,11 @@ pub(crate) fn append_agent_output(path: &str, suffix: &str) -> Result<(), String
         .map_err(|error| error.to_string())
 }
 
-pub(crate) fn format_agent_terminal_output(status: &str, result: Option<&str>, error: Option<&str>) -> String {
+pub(crate) fn format_agent_terminal_output(
+    status: &str,
+    result: Option<&str>,
+    error: Option<&str>,
+) -> String {
     let mut sections = vec![format!("\n## Result\n\n- status: {status}\n")];
     if let Some(result) = result.filter(|value| !value.trim().is_empty()) {
         sections.push(format!("\n### Final response\n\n{}\n", result.trim()));
@@ -777,7 +784,9 @@ impl ToolExecutor for SubagentToolExecutor {
     }
 }
 
-pub(crate) fn tool_specs_for_allowed_tools(allowed_tools: Option<&BTreeSet<String>>) -> Vec<ToolSpec> {
+pub(crate) fn tool_specs_for_allowed_tools(
+    allowed_tools: Option<&BTreeSet<String>>,
+) -> Vec<ToolSpec> {
     mvp_tool_specs()
         .into_iter()
         .filter(|spec| allowed_tools.is_none_or(|allowed| allowed.contains(spec.name)))

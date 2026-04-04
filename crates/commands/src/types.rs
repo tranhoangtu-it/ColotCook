@@ -1,4 +1,4 @@
-/// Command type definitions for the slash command system.
+//! Command type definitions for the slash command system.
 
 use std::fmt;
 

@@ -1,4 +1,4 @@
-/// Pure utility functions: string manipulation, suggestions, truncation, and shell helpers.
+//! Pure utility functions: string manipulation, suggestions, truncation, and shell helpers.
 
 use std::env;
 use std::fs;

@@ -1,35 +1,30 @@
+pub mod agents_and_skills;
+pub mod handlers;
+pub mod help;
+pub mod plugins_command;
 pub mod types;
 pub mod validation;
-pub mod help;
-pub mod agents_and_skills;
-pub mod plugins_command;
-pub mod handlers;
 
 // Re-exports for backward compatibility
-pub use types::*;
-pub use validation::validate_slash_command_input;
+pub use handlers::handle_slash_command;
 pub use help::{
-    render_slash_command_help, render_slash_command_help_detail,
-    resume_supported_slash_commands, slash_command_specs,
-    suggest_slash_commands,
+    render_slash_command_help, render_slash_command_help_detail, resume_supported_slash_commands,
+    slash_command_specs, suggest_slash_commands,
 };
 pub use plugins_command::{
-    handle_agents_slash_command, handle_plugins_slash_command,
-    handle_skills_slash_command, render_plugins_report,
-    PluginsCommandResult, SlashCommandResult,
+    handle_agents_slash_command, handle_plugins_slash_command, handle_skills_slash_command,
+    render_plugins_report, PluginsCommandResult, SlashCommandResult,
 };
-pub use handlers::handle_slash_command;
+pub use types::*;
+pub use validation::validate_slash_command_input;
 // Internal re-exports for test access
 #[allow(unused_imports)]
-pub(crate) use plugins_command::{
-    DefinitionSource, SkillOrigin, SkillRoot,
+pub(crate) use agents_and_skills::{
+    install_skill_into, load_agents_from_roots, load_skills_from_roots, parse_skill_frontmatter,
+    render_agents_report, render_skill_install_report, render_skills_report,
 };
 #[allow(unused_imports)]
-pub(crate) use agents_and_skills::{
-    install_skill_into, load_agents_from_roots, load_skills_from_roots,
-    parse_skill_frontmatter, render_agents_report, render_skill_install_report,
-    render_skills_report,
-};
+pub(crate) use plugins_command::{DefinitionSource, SkillOrigin, SkillRoot};
 
 #[cfg(test)]
 mod tests {

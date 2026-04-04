@@ -1,8 +1,7 @@
-/// Help rendering, suggestion, and slash command spec access.
+//! Help rendering, suggestion, and slash command spec access.
 
-use crate::types::*;
+use crate::types::{SlashCommandSpec, SLASH_COMMAND_SPECS};
 use crate::validation::find_slash_command_spec;
-
 
 pub(crate) fn slash_command_usage(spec: &SlashCommandSpec) -> String {
     match spec.argument_hint {

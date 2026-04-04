@@ -156,8 +156,8 @@ pub(crate) fn build_system_prompt() -> Result<Vec<String>, Box<dyn std::error::E
 }
 
 #[allow(dead_code)] // Entry point for plugin state initialization, called from session setup paths
-pub(crate) fn build_runtime_plugin_state(
-) -> Result<RuntimePluginState, Box<dyn std::error::Error>> {
+pub(crate) fn build_runtime_plugin_state() -> Result<RuntimePluginState, Box<dyn std::error::Error>>
+{
     let cwd = env::current_dir()?;
     let loader = ConfigLoader::default_for(&cwd);
     let runtime_config = loader.load()?;
@@ -177,8 +177,7 @@ pub(crate) fn build_runtime_plugin_state_with_loader(
         .feature_config()
         .clone()
         .with_hooks(runtime_config.hooks().merged(&plugin_hook_config));
-    let tool_registry =
-        GlobalToolRegistry::with_plugin_tools(plugin_registry.aggregated_tools()?)?;
+    let tool_registry = GlobalToolRegistry::with_plugin_tools(plugin_registry.aggregated_tools()?)?;
     Ok(RuntimePluginState {
         feature_config,
         tool_registry,

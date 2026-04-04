@@ -1,4 +1,4 @@
-/// Session management: create, resolve, list, and format managed sessions.
+//! Session management: create, resolve, list, and format managed sessions.
 
 use std::env;
 use std::fs;
@@ -12,8 +12,7 @@ use colotcook_runtime::Session;
 pub(crate) const PRIMARY_SESSION_EXTENSION: &str = "jsonl";
 pub(crate) const LEGACY_SESSION_EXTENSION: &str = "json";
 pub(crate) const LATEST_SESSION_REFERENCE: &str = "latest";
-pub(crate) const SESSION_REFERENCE_ALIASES: &[&str] =
-    &[LATEST_SESSION_REFERENCE, "last", "recent"];
+pub(crate) const SESSION_REFERENCE_ALIASES: &[&str] = &[LATEST_SESSION_REFERENCE, "last", "recent"];
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -176,8 +175,8 @@ pub(crate) fn list_managed_sessions(
 }
 
 /// Return the most recently modified managed session.
-pub(crate) fn latest_managed_session(
-) -> Result<ManagedSessionSummary, Box<dyn std::error::Error>> {
+pub(crate) fn latest_managed_session() -> Result<ManagedSessionSummary, Box<dyn std::error::Error>>
+{
     list_managed_sessions()?
         .into_iter()
         .next()

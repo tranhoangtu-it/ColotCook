@@ -12,8 +12,8 @@ use colotcook_api::{
 };
 use colotcook_runtime as runtime;
 use colotcook_runtime::{
-    ApiClient, ApiRequest, AssistantEvent, ContentBlock, ConversationMessage,
-    MessageRole, PromptCacheEvent, RuntimeError,
+    ApiClient, ApiRequest, AssistantEvent, ContentBlock, ConversationMessage, MessageRole,
+    PromptCacheEvent, RuntimeError,
 };
 use colotcook_tools::GlobalToolRegistry;
 use serde_json::json;
@@ -22,7 +22,9 @@ use crate::arg_parsing::{filter_tool_specs, max_tokens_for_model, AllowedToolSet
 use crate::oauth_flow::resolve_cli_auth_source;
 use crate::render::{MarkdownStreamState, TerminalRenderer};
 use crate::tool_display::format_tool_call_start;
-use crate::util::{extract_tool_path, first_visible_line, summarize_tool_payload, truncate_for_summary};
+use crate::util::{
+    extract_tool_path, first_visible_line, summarize_tool_payload, truncate_for_summary,
+};
 
 #[allow(dead_code)] // Used by InternalPromptProgressRun heartbeat thread at runtime
 pub(crate) const INTERNAL_PROGRESS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(3);
@@ -669,10 +671,7 @@ pub(crate) fn response_to_events(
     Ok(events)
 }
 
-pub(crate) fn push_prompt_cache_record(
-    client: &ProviderClient,
-    events: &mut Vec<AssistantEvent>,
-) {
+pub(crate) fn push_prompt_cache_record(client: &ProviderClient, events: &mut Vec<AssistantEvent>) {
     if let Some(record) = client.take_last_prompt_cache_record() {
         if let Some(event) = prompt_cache_record_to_runtime_event(record) {
             events.push(AssistantEvent::PromptCache(event));

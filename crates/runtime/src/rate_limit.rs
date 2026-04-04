@@ -75,7 +75,10 @@ impl RateLimiter {
 
     /// Check if a request with the given token count is allowed.
     pub fn check_request(&self, estimated_tokens: u32) -> RateLimitDecision {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Instant::now();
         let window = Duration::from_secs(60);
 
@@ -113,7 +116,10 @@ impl RateLimiter {
 
     /// Record actual token usage after a request completes.
     pub fn record_usage(&self, actual_tokens: u32) {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // Adjust if actual usage differs from estimate.
         // This is a simple "add the actual" approach.
         state.tokens_in_window = state.tokens_in_window.saturating_add(actual_tokens);

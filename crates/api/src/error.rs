@@ -38,10 +38,7 @@ pub enum ApiError {
     /// An SSE frame did not conform to the expected format.
     InvalidSseFrame(&'static str),
     /// Exponential backoff delay calculation overflowed for the given attempt.
-    BackoffOverflow {
-        attempt: u32,
-        base_delay: Duration,
-    },
+    BackoffOverflow { attempt: u32, base_delay: Duration },
 }
 
 impl ApiError {

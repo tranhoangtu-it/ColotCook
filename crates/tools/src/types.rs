@@ -1,4 +1,4 @@
-/// Input and output types for all built-in tool implementations.
+//! Input and output types for all built-in tool implementations.
 
 use std::collections::BTreeMap;
 

@@ -1,4 +1,4 @@
-/// Web fetch and search tool implementations.
+//! Web fetch and search tool implementations.
 
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
@@ -6,8 +6,7 @@ use std::time::{Duration, Instant};
 use reqwest::blocking::Client;
 
 use crate::types::{
-    SearchHit, WebFetchInput, WebFetchOutput, WebSearchInput, WebSearchOutput,
-    WebSearchResultItem,
+    SearchHit, WebFetchInput, WebFetchOutput, WebSearchInput, WebSearchOutput, WebSearchResultItem,
 };
 
 pub(crate) fn execute_web_fetch(input: &WebFetchInput) -> Result<WebFetchOutput, String> {

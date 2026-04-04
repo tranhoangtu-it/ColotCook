@@ -1,9 +1,8 @@
-/// Slash command input validation and argument parsing.
+//! Slash command input validation and argument parsing.
 
-use crate::types::*;
-use crate::help::{render_slash_command_help_detail, slash_command_specs};
 use crate::agents_and_skills::normalize_optional_args;
-
+use crate::help::{render_slash_command_help_detail, slash_command_specs};
+use crate::types::{SlashCommand, SlashCommandParseError, SlashCommandSpec};
 
 impl SlashCommand {
     pub fn parse(input: &str) -> Result<Option<Self>, SlashCommandParseError> {
@@ -141,7 +140,9 @@ pub(crate) fn require_remainder(
     remainder.ok_or_else(|| usage_error(command, argument_hint))
 }
 
-pub(crate) fn parse_permissions_mode(args: &[&str]) -> Result<Option<String>, SlashCommandParseError> {
+pub(crate) fn parse_permissions_mode(
+    args: &[&str],
+) -> Result<Option<String>, SlashCommandParseError> {
     let mode = optional_single_arg(
         "permissions",
         args,
@@ -179,7 +180,9 @@ pub(crate) fn parse_clear_args(args: &[&str]) -> Result<bool, SlashCommandParseE
     }
 }
 
-pub(crate) fn parse_config_section(args: &[&str]) -> Result<Option<String>, SlashCommandParseError> {
+pub(crate) fn parse_config_section(
+    args: &[&str],
+) -> Result<Option<String>, SlashCommandParseError> {
     let section = optional_single_arg("config", args, "[env|hooks|model|plugins]")?;
     if let Some(section) = section {
         if matches!(section.as_str(), "env" | "hooks" | "model" | "plugins") {
@@ -321,7 +324,9 @@ pub(crate) fn parse_list_or_help_args(
     }
 }
 
-pub(crate) fn parse_skills_args(args: Option<&str>) -> Result<Option<String>, SlashCommandParseError> {
+pub(crate) fn parse_skills_args(
+    args: Option<&str>,
+) -> Result<Option<String>, SlashCommandParseError> {
     let Some(args) = normalize_optional_args(args) else {
         return Ok(None);
     };

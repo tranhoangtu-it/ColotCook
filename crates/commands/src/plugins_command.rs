@@ -1,4 +1,4 @@
-/// Plugin slash command handler and report rendering.
+//! Plugin slash command handler and report rendering.
 
 use std::path::{Path, PathBuf};
 
@@ -6,12 +6,10 @@ use colotcook_plugins::{PluginError, PluginManager, PluginSummary};
 use colotcook_runtime::Session;
 
 use crate::agents_and_skills::{
-    discover_definition_roots, discover_skill_roots, install_skill,
-    load_agents_from_roots, load_skills_from_roots, normalize_optional_args,
-    render_agents_report, render_agents_usage, render_skill_install_report,
-    render_skills_report, render_skills_usage,
+    discover_definition_roots, discover_skill_roots, install_skill, load_agents_from_roots,
+    load_skills_from_roots, normalize_optional_args, render_agents_report, render_agents_usage,
+    render_skill_install_report, render_skills_report, render_skills_usage,
 };
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlashCommandResult {
@@ -269,7 +267,10 @@ pub fn render_plugins_report(plugins: &[PluginSummary]) -> String {
     lines.join("\n")
 }
 
-pub(crate) fn render_plugin_install_report(plugin_id: &str, plugin: Option<&PluginSummary>) -> String {
+pub(crate) fn render_plugin_install_report(
+    plugin_id: &str,
+    plugin: Option<&PluginSummary>,
+) -> String {
     let name = plugin.map_or(plugin_id, |plugin| plugin.metadata.name.as_str());
     let version = plugin.map_or("unknown", |plugin| plugin.metadata.version.as_str());
     let enabled = plugin.is_some_and(|plugin| plugin.enabled);
