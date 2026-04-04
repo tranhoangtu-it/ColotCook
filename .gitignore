@@ -1,32 +1,69 @@
 # Build artifacts
 target/
+*.d
+*.o
+*.so
+*.dylib
+
+# Rust
+**/*.rs.bk
+Cargo.lock.bak
 
 # Agent session data
 .colotcook-agents/
 .clawd-agents/
+.colotcook-todos.json
 
 # Sandbox runtime directories
 .sandbox-tmp/
 .sandbox-home/
 
 # Claude Code local artifacts
+.claude/
 .claude/settings.local.json
 .claude/sessions/
 
+# Documentation (generated locally, not tracked)
+docs/
+
+# Coverage reports
+target/coverage/
+target/llvm-cov-target/
+*.profraw
+*.profdata
+lcov.info
+tarpaulin-report.html
+
 # Python
 __pycache__/
+*.pyc
+.venv/
+
+# Node (if any tooling)
+node_modules/
 
 # Project-specific
 archive/
 .omx/
+plans/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+credentials.json
 
 # OS files
 .DS_Store
 Thumbs.db
+._*
+.Spotlight-V100
+.Trashes
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-docs/
+*~
+*.iml
