@@ -83,7 +83,10 @@ fn help_flag_prints_usage_and_exits_zero() {
     let output = colotcook().arg("--help").output().unwrap();
     assert_success(&output);
     let stdout = stdout_of(&output);
-    assert!(stdout.contains("Usage:"), "help should contain Usage section");
+    assert!(
+        stdout.contains("Usage:"),
+        "help should contain Usage section"
+    );
     assert!(
         stdout.contains("--model"),
         "help should mention --model flag"
@@ -364,11 +367,7 @@ fn slash_agents_command_runs_successfully() {
     fs::create_dir_all(&dir).unwrap();
     let output = colotcook_in(&dir).arg("/agents").output().unwrap();
     // agents command may succeed or fail depending on config, but should not panic
-    let combined = format!(
-        "{}{}",
-        stdout_of(&output),
-        stderr_of(&output)
-    );
+    let combined = format!("{}{}", stdout_of(&output), stderr_of(&output));
     assert!(
         !combined.contains("panicked"),
         "agents command should not panic"
@@ -381,11 +380,7 @@ fn slash_skills_command_runs_successfully() {
     let dir = unique_temp_dir("skills-cmd");
     fs::create_dir_all(&dir).unwrap();
     let output = colotcook_in(&dir).arg("/skills").output().unwrap();
-    let combined = format!(
-        "{}{}",
-        stdout_of(&output),
-        stderr_of(&output)
-    );
+    let combined = format!("{}{}", stdout_of(&output), stderr_of(&output));
     assert!(
         !combined.contains("panicked"),
         "skills command should not panic"
@@ -572,11 +567,7 @@ fn resume_with_status_shows_session_info() {
     fs::create_dir_all(&dir).unwrap();
     let session_path = write_session(&dir, "test-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/status",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/status"])
         .output()
         .unwrap();
     assert_success(&output);
@@ -592,11 +583,7 @@ fn resume_with_version_shows_version_info() {
     fs::create_dir_all(&dir).unwrap();
     let session_path = write_session(&dir, "ver-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/version",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/version"])
         .output()
         .unwrap();
     assert_success(&output);
@@ -610,11 +597,7 @@ fn resume_with_cost_shows_cost_report() {
     fs::create_dir_all(&dir).unwrap();
     let session_path = write_session(&dir, "cost-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/cost",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/cost"])
         .output()
         .unwrap();
     assert_success(&output);
@@ -632,11 +615,7 @@ fn resume_with_help_shows_help() {
     fs::create_dir_all(&dir).unwrap();
     let session_path = write_session(&dir, "help-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/help",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/help"])
         .output()
         .unwrap();
     assert_success(&output);
@@ -649,11 +628,7 @@ fn resume_with_compact_runs_compaction() {
     fs::create_dir_all(&dir).unwrap();
     let session_path = write_session(&dir, "compact-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/compact",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/compact"])
         .output()
         .unwrap();
     assert_success(&output);
@@ -671,11 +646,7 @@ fn resume_with_clear_requires_confirm() {
     fs::create_dir_all(&dir).unwrap();
     let session_path = write_session(&dir, "clear-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/clear",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/clear"])
         .output()
         .unwrap();
     assert_success(&output);
@@ -763,11 +734,7 @@ fn resume_unknown_slash_command_shows_error() {
     fs::create_dir_all(&dir).unwrap();
     let session_path = write_session(&dir, "unknown-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/foobar",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/foobar"])
         .output()
         .unwrap();
     assert_failure(&output);
@@ -911,11 +878,7 @@ fn resume_memory_command_runs() {
     fs::create_dir_all(&dir).unwrap();
     let session_path = write_session(&dir, "mem-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/memory",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/memory"])
         .output()
         .unwrap();
     // memory command should succeed (possibly with no memory files)
@@ -931,11 +894,7 @@ fn resume_config_command_runs() {
     fs::create_dir_all(&dir).unwrap();
     let session_path = write_session(&dir, "config-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/config",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/config"])
         .output()
         .unwrap();
     assert_success(&output);
@@ -951,11 +910,7 @@ fn resume_sandbox_command_runs() {
     fs::create_dir_all(&dir).unwrap();
     let session_path = write_session(&dir, "sandbox-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/sandbox",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/sandbox"])
         .output()
         .unwrap();
     assert_success(&output);
@@ -1011,11 +966,7 @@ fn resume_diff_command_in_git_repo() {
 
     let session_path = write_session(&dir, "diff-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/diff",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/diff"])
         .output()
         .unwrap();
     assert_success(&output);
@@ -1032,11 +983,7 @@ fn resume_init_command_creates_claude_md() {
     fs::create_dir_all(&dir).unwrap();
     let session_path = write_session(&dir, "init-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/init",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/init"])
         .output()
         .unwrap();
     // init may succeed or show guidance
@@ -1081,11 +1028,7 @@ fn resume_agents_command_runs() {
     fs::create_dir_all(&dir).unwrap();
     let session_path = write_session(&dir, "agents-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/agents",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/agents"])
         .output()
         .unwrap();
     // agents may succeed or fail depending on config, but shouldn't panic
@@ -1100,11 +1043,7 @@ fn resume_skills_command_runs() {
     fs::create_dir_all(&dir).unwrap();
     let session_path = write_session(&dir, "skills-session");
     let output = colotcook_in(&dir)
-        .args([
-            "--resume",
-            session_path.to_str().unwrap(),
-            "/skills",
-        ])
+        .args(["--resume", session_path.to_str().unwrap(), "/skills"])
         .output()
         .unwrap();
     let combined = format!("{}{}", stdout_of(&output), stderr_of(&output));
