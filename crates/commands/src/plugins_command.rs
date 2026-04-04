@@ -316,3 +316,113 @@ pub(crate) fn resolve_plugin_target(
         ))),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use colotcook_plugins::{PluginKind, PluginMetadata, PluginSummary};
+
+    fn make_plugin_summary(id: &str, name: &str, version: &str, enabled: bool) -> PluginSummary {
+        PluginSummary {
+            metadata: PluginMetadata {
+                id: id.to_string(),
+                name: name.to_string(),
+                version: version.to_string(),
+                description: String::new(),
+                kind: PluginKind::External,
+                source: String::new(),
+                default_enabled: true,
+                root: None,
+            },
+            enabled,
+        }
+    }
+
+    // ── render_plugins_report ────────────────────────────────────────────────
+
+    #[test]
+    fn render_plugins_report_empty_list() {
+        let result = render_plugins_report(&[]);
+        assert!(result.contains("No plugins installed."));
+    }
+
+    #[test]
+    fn render_plugins_report_single_enabled_plugin() {
+        let plugins = vec![make_plugin_summary("my-plugin", "My Plugin", "1.0.0", true)];
+        let result = render_plugins_report(&plugins);
+        assert!(result.contains("My Plugin"));
+        assert!(result.contains("1.0.0"));
+        assert!(result.contains("enabled"));
+    }
+
+    #[test]
+    fn render_plugins_report_disabled_plugin() {
+        let plugins = vec![make_plugin_summary("my-plugin", "My Plugin", "2.0.0", false)];
+        let result = render_plugins_report(&plugins);
+        assert!(result.contains("disabled"));
+    }
+
+    #[test]
+    fn render_plugins_report_multiple_plugins() {
+        let plugins = vec![
+            make_plugin_summary("plugin-a", "Plugin A", "1.0", true),
+            make_plugin_summary("plugin-b", "Plugin B", "2.0", false),
+        ];
+        let result = render_plugins_report(&plugins);
+        assert!(result.contains("Plugin A"));
+        assert!(result.contains("Plugin B"));
+    }
+
+    // ── render_plugin_install_report ─────────────────────────────────────────
+
+    #[test]
+    fn render_plugin_install_report_with_plugin() {
+        let plugin = make_plugin_summary("my-id", "My Plugin", "1.0.0", true);
+        let result = render_plugin_install_report("my-id", Some(&plugin));
+        assert!(result.contains("installed my-id"));
+        assert!(result.contains("My Plugin"));
+        assert!(result.contains("1.0.0"));
+        assert!(result.contains("enabled"));
+    }
+
+    #[test]
+    fn render_plugin_install_report_without_plugin() {
+        let result = render_plugin_install_report("unknown-id", None);
+        assert!(result.contains("installed unknown-id"));
+        assert!(result.contains("unknown-id")); // name fallback
+        assert!(result.contains("unknown")); // version fallback
+        assert!(result.contains("disabled"));
+    }
+
+    // ── DefinitionSource::label ──────────────────────────────────────────────
+
+    #[test]
+    fn definition_source_label_project_codex() {
+        assert_eq!(DefinitionSource::ProjectCodex.label(), "Project (.codex)");
+    }
+
+    #[test]
+    fn definition_source_label_user_claude() {
+        assert_eq!(DefinitionSource::UserClaude.label(), "User (~/.claude)");
+    }
+
+    #[test]
+    fn definition_source_label_user_codex_home() {
+        assert!(DefinitionSource::UserCodexHome.label().contains("CODEX_HOME"));
+    }
+
+    // ── SkillOrigin::detail_label ────────────────────────────────────────────
+
+    #[test]
+    fn skill_origin_skills_dir_has_no_detail_label() {
+        assert!(SkillOrigin::SkillsDir.detail_label().is_none());
+    }
+
+    #[test]
+    fn skill_origin_legacy_commands_dir_has_detail_label() {
+        assert_eq!(
+            SkillOrigin::LegacyCommandsDir.detail_label(),
+            Some("legacy /commands")
+        );
+    }
+}

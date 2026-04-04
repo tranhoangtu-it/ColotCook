@@ -727,3 +727,287 @@ pub(crate) fn render_skills_usage(unexpected: Option<&str>) -> String {
     }
     lines.join("\n")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugins_command::{AgentSummary, DefinitionSource, SkillOrigin, SkillSummary};
+
+    // ── parse_skill_frontmatter ──────────────────────────────────────────────
+
+    #[test]
+    fn parse_skill_frontmatter_valid_with_name_and_description() {
+        let contents = "---\nname: My Skill\ndescription: Does things\n---\n# Content";
+        let (name, description) = parse_skill_frontmatter(contents);
+        assert_eq!(name, Some("My Skill".to_string()));
+        assert_eq!(description, Some("Does things".to_string()));
+    }
+
+    #[test]
+    fn parse_skill_frontmatter_no_frontmatter_returns_none() {
+        let contents = "# Just a heading\nsome content";
+        let (name, description) = parse_skill_frontmatter(contents);
+        assert!(name.is_none());
+        assert!(description.is_none());
+    }
+
+    #[test]
+    fn parse_skill_frontmatter_empty_name_returns_none() {
+        let contents = "---\nname: \ndescription: Has desc\n---";
+        let (name, _description) = parse_skill_frontmatter(contents);
+        assert!(name.is_none());
+    }
+
+    #[test]
+    fn parse_skill_frontmatter_quoted_values() {
+        let contents = "---\nname: \"Quoted Skill\"\ndescription: \"Quoted desc\"\n---";
+        let (name, description) = parse_skill_frontmatter(contents);
+        assert_eq!(name, Some("Quoted Skill".to_string()));
+        assert_eq!(description, Some("Quoted desc".to_string()));
+    }
+
+    #[test]
+    fn parse_skill_frontmatter_no_closing_fence_reads_to_end() {
+        let contents = "---\nname: Skill X\n";
+        let (name, _) = parse_skill_frontmatter(contents);
+        assert_eq!(name, Some("Skill X".to_string()));
+    }
+
+    #[test]
+    fn parse_skill_frontmatter_only_description() {
+        let contents = "---\ndescription: A description\n---";
+        let (name, description) = parse_skill_frontmatter(contents);
+        assert!(name.is_none());
+        assert_eq!(description, Some("A description".to_string()));
+    }
+
+    // ── unquote_frontmatter_value ────────────────────────────────────────────
+
+    #[test]
+    fn unquote_frontmatter_value_double_quotes() {
+        assert_eq!(unquote_frontmatter_value("\"hello\""), "hello");
+    }
+
+    #[test]
+    fn unquote_frontmatter_value_single_quotes() {
+        assert_eq!(unquote_frontmatter_value("'hello'"), "hello");
+    }
+
+    #[test]
+    fn unquote_frontmatter_value_no_quotes() {
+        assert_eq!(unquote_frontmatter_value("hello"), "hello");
+    }
+
+    #[test]
+    fn unquote_frontmatter_value_trims_whitespace() {
+        assert_eq!(unquote_frontmatter_value("  hello  "), "hello");
+    }
+
+    #[test]
+    fn unquote_frontmatter_value_mismatched_quotes_unchanged() {
+        // Opening double quote but closing single — not stripped
+        assert_eq!(unquote_frontmatter_value("\"hello'"), "\"hello'");
+    }
+
+    // ── sanitize_skill_invocation_name ───────────────────────────────────────
+
+    #[test]
+    fn sanitize_skill_invocation_name_simple() {
+        assert_eq!(
+            sanitize_skill_invocation_name("my-skill"),
+            Some("my-skill".to_string())
+        );
+    }
+
+    #[test]
+    fn sanitize_skill_invocation_name_strips_slash_prefix() {
+        assert_eq!(
+            sanitize_skill_invocation_name("/my-skill"),
+            Some("my-skill".to_string())
+        );
+    }
+
+    #[test]
+    fn sanitize_skill_invocation_name_strips_dollar_prefix() {
+        assert_eq!(
+            sanitize_skill_invocation_name("$my-skill"),
+            Some("my-skill".to_string())
+        );
+    }
+
+    #[test]
+    fn sanitize_skill_invocation_name_converts_to_lowercase() {
+        assert_eq!(
+            sanitize_skill_invocation_name("MySkill"),
+            Some("myskill".to_string())
+        );
+    }
+
+    #[test]
+    fn sanitize_skill_invocation_name_spaces_become_dashes() {
+        assert_eq!(
+            sanitize_skill_invocation_name("my skill"),
+            Some("my-skill".to_string())
+        );
+    }
+
+    #[test]
+    fn sanitize_skill_invocation_name_empty_returns_none() {
+        assert!(sanitize_skill_invocation_name("").is_none());
+    }
+
+    #[test]
+    fn sanitize_skill_invocation_name_only_separators_returns_none() {
+        assert!(sanitize_skill_invocation_name("///").is_none());
+    }
+
+    #[test]
+    fn sanitize_skill_invocation_name_allows_dots_and_underscores() {
+        assert_eq!(
+            sanitize_skill_invocation_name("my_skill.v2"),
+            Some("my_skill.v2".to_string())
+        );
+    }
+
+    #[test]
+    fn sanitize_skill_invocation_name_consecutive_separators_collapsed() {
+        let result = sanitize_skill_invocation_name("my  skill");
+        assert_eq!(result, Some("my-skill".to_string()));
+    }
+
+    // ── render_agents_report ─────────────────────────────────────────────────
+
+    #[test]
+    fn render_agents_report_empty_agents() {
+        let result = render_agents_report(&[]);
+        assert_eq!(result, "No agents found.");
+    }
+
+    #[test]
+    fn render_agents_report_single_agent() {
+        let agents = vec![AgentSummary {
+            name: "coder".to_string(),
+            description: Some("Writes code".to_string()),
+            model: None,
+            reasoning_effort: None,
+            source: DefinitionSource::UserClaude,
+            shadowed_by: None,
+        }];
+        let result = render_agents_report(&agents);
+        assert!(result.contains("coder"));
+        assert!(result.contains("Writes code"));
+        assert!(result.contains("1 active agents"));
+    }
+
+    #[test]
+    fn render_agents_report_shadowed_agent() {
+        let agents = vec![
+            AgentSummary {
+                name: "coder".to_string(),
+                description: None,
+                model: None,
+                reasoning_effort: None,
+                source: DefinitionSource::UserClaude,
+                shadowed_by: None,
+            },
+            AgentSummary {
+                name: "coder".to_string(),
+                description: None,
+                model: None,
+                reasoning_effort: None,
+                source: DefinitionSource::ProjectClaude,
+                shadowed_by: Some(DefinitionSource::UserClaude),
+            },
+        ];
+        let result = render_agents_report(&agents);
+        assert!(result.contains("shadowed by"));
+    }
+
+    // ── render_skills_report ─────────────────────────────────────────────────
+
+    #[test]
+    fn render_skills_report_empty_skills() {
+        let result = render_skills_report(&[]);
+        assert_eq!(result, "No skills found.");
+    }
+
+    #[test]
+    fn render_skills_report_single_skill() {
+        let skills = vec![SkillSummary {
+            name: "pdf".to_string(),
+            description: Some("Process PDFs".to_string()),
+            source: DefinitionSource::UserClaude,
+            shadowed_by: None,
+            origin: SkillOrigin::SkillsDir,
+        }];
+        let result = render_skills_report(&skills);
+        assert!(result.contains("pdf"));
+        assert!(result.contains("Process PDFs"));
+        assert!(result.contains("1 available skills"));
+    }
+
+    #[test]
+    fn render_skills_report_legacy_skill_shows_label() {
+        let skills = vec![SkillSummary {
+            name: "old-cmd".to_string(),
+            description: None,
+            source: DefinitionSource::UserClaude,
+            shadowed_by: None,
+            origin: SkillOrigin::LegacyCommandsDir,
+        }];
+        let result = render_skills_report(&skills);
+        assert!(result.contains("legacy /commands"));
+    }
+
+    // ── normalize_optional_args ──────────────────────────────────────────────
+
+    #[test]
+    fn normalize_optional_args_none_returns_none() {
+        assert!(normalize_optional_args(None).is_none());
+    }
+
+    #[test]
+    fn normalize_optional_args_empty_string_returns_none() {
+        assert!(normalize_optional_args(Some("")).is_none());
+    }
+
+    #[test]
+    fn normalize_optional_args_whitespace_only_returns_none() {
+        assert!(normalize_optional_args(Some("   ")).is_none());
+    }
+
+    #[test]
+    fn normalize_optional_args_trims_and_returns_some() {
+        assert_eq!(normalize_optional_args(Some("  list  ")), Some("list"));
+    }
+
+    // ── render_agents_usage / render_skills_usage ────────────────────────────
+
+    #[test]
+    fn render_agents_usage_no_unexpected() {
+        let result = render_agents_usage(None);
+        assert!(result.contains("Agents"));
+        assert!(result.contains("Usage"));
+        assert!(!result.contains("Unexpected"));
+    }
+
+    #[test]
+    fn render_agents_usage_with_unexpected() {
+        let result = render_agents_usage(Some("bad-arg"));
+        assert!(result.contains("bad-arg"));
+        assert!(result.contains("Unexpected"));
+    }
+
+    #[test]
+    fn render_skills_usage_no_unexpected() {
+        let result = render_skills_usage(None);
+        assert!(result.contains("Skills"));
+        assert!(result.contains("install"));
+    }
+
+    #[test]
+    fn render_skills_usage_with_unexpected() {
+        let result = render_skills_usage(Some("oops"));
+        assert!(result.contains("oops"));
+    }
+}
