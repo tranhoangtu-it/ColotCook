@@ -1,4 +1,4 @@
-/// Plugin type definitions, error types, traits, and data structures.
+//! Plugin type definitions, traits, and core data structures.
 
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
@@ -11,6 +11,7 @@ use serde_json::Value;
 use crate::discovery::{
     run_lifecycle_commands, validate_hook_paths, validate_lifecycle_paths, validate_tool_paths,
 };
+use crate::registry::PluginError;
 
 pub(crate) const EXTERNAL_MARKETPLACE: &str = "external";
 pub(crate) const BUILTIN_MARKETPLACE: &str = "builtin";
@@ -42,7 +43,7 @@ impl Display for PluginKind {
 
 impl PluginKind {
     #[must_use]
-    fn marketplace(self) -> &'static str {
+    pub(crate) fn marketplace(self) -> &'static str {
         match self {
             Self::Builtin => BUILTIN_MARKETPLACE,
             Self::Bundled => BUNDLED_MARKETPLACE,
@@ -148,7 +149,7 @@ impl PluginPermission {
         }
     }
 
-    fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "read" => Some(Self::Read),
             "write" => Some(Self::Write),
@@ -194,7 +195,7 @@ impl PluginToolPermission {
         }
     }
 
-    fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "read-only" => Some(Self::ReadOnly),
             "workspace-write" => Some(Self::WorkspaceWrite),
@@ -260,7 +261,7 @@ pub struct PluginTool {
     plugin_id: String,
     plugin_name: String,
     definition: PluginToolDefinition,
-    command: String,
+    pub(crate) command: String,
     args: Vec<String>,
     required_permission: PluginToolPermission,
     root: Option<PathBuf>,
@@ -384,26 +385,26 @@ fn default_plugin_kind() -> PluginKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BuiltinPlugin {
-    metadata: PluginMetadata,
-    hooks: PluginHooks,
-    lifecycle: PluginLifecycle,
-    tools: Vec<PluginTool>,
+    pub(crate) metadata: PluginMetadata,
+    pub(crate) hooks: PluginHooks,
+    pub(crate) lifecycle: PluginLifecycle,
+    pub(crate) tools: Vec<PluginTool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BundledPlugin {
-    metadata: PluginMetadata,
-    hooks: PluginHooks,
-    lifecycle: PluginLifecycle,
-    tools: Vec<PluginTool>,
+    pub(crate) metadata: PluginMetadata,
+    pub(crate) hooks: PluginHooks,
+    pub(crate) lifecycle: PluginLifecycle,
+    pub(crate) tools: Vec<PluginTool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExternalPlugin {
-    metadata: PluginMetadata,
-    hooks: PluginHooks,
-    lifecycle: PluginLifecycle,
-    tools: Vec<PluginTool>,
+    pub(crate) metadata: PluginMetadata,
+    pub(crate) hooks: PluginHooks,
+    pub(crate) lifecycle: PluginLifecycle,
+    pub(crate) tools: Vec<PluginTool>,
 }
 
 pub trait Plugin {
@@ -592,436 +593,5 @@ impl Plugin for PluginDefinition {
             Self::Bundled(plugin) => plugin.shutdown(),
             Self::External(plugin) => plugin.shutdown(),
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct RegisteredPlugin {
-    definition: PluginDefinition,
-    enabled: bool,
-}
-
-impl RegisteredPlugin {
-    #[must_use]
-    pub fn new(definition: PluginDefinition, enabled: bool) -> Self {
-        Self {
-            definition,
-            enabled,
-        }
-    }
-
-    #[must_use]
-    pub fn metadata(&self) -> &PluginMetadata {
-        self.definition.metadata()
-    }
-
-    #[must_use]
-    pub fn hooks(&self) -> &PluginHooks {
-        self.definition.hooks()
-    }
-
-    #[must_use]
-    pub fn tools(&self) -> &[PluginTool] {
-        self.definition.tools()
-    }
-
-    #[must_use]
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-
-    pub fn validate(&self) -> Result<(), PluginError> {
-        self.definition.validate()
-    }
-
-    pub fn initialize(&self) -> Result<(), PluginError> {
-        self.definition.initialize()
-    }
-
-    pub fn shutdown(&self) -> Result<(), PluginError> {
-        self.definition.shutdown()
-    }
-
-    #[must_use]
-    pub fn summary(&self) -> PluginSummary {
-        PluginSummary {
-            metadata: self.metadata().clone(),
-            enabled: self.enabled,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PluginSummary {
-    pub metadata: PluginMetadata,
-    pub enabled: bool,
-}
-
-#[derive(Debug)]
-pub struct PluginLoadFailure {
-    pub plugin_root: PathBuf,
-    pub kind: PluginKind,
-    pub source: String,
-    error: Box<PluginError>,
-}
-
-impl PluginLoadFailure {
-    #[must_use]
-    pub fn new(plugin_root: PathBuf, kind: PluginKind, source: String, error: PluginError) -> Self {
-        Self {
-            plugin_root,
-            kind,
-            source,
-            error: Box::new(error),
-        }
-    }
-
-    #[must_use]
-    pub fn error(&self) -> &PluginError {
-        self.error.as_ref()
-    }
-}
-
-impl Display for PluginLoadFailure {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "failed to load {} plugin from `{}` (source: {}): {}",
-            self.kind,
-            self.plugin_root.display(),
-            self.source,
-            self.error()
-        )
-    }
-}
-
-#[derive(Debug)]
-pub struct PluginRegistryReport {
-    registry: PluginRegistry,
-    failures: Vec<PluginLoadFailure>,
-}
-
-impl PluginRegistryReport {
-    #[must_use]
-    pub fn new(registry: PluginRegistry, failures: Vec<PluginLoadFailure>) -> Self {
-        Self { registry, failures }
-    }
-
-    #[must_use]
-    pub fn registry(&self) -> &PluginRegistry {
-        &self.registry
-    }
-
-    #[must_use]
-    pub fn failures(&self) -> &[PluginLoadFailure] {
-        &self.failures
-    }
-
-    #[must_use]
-    pub fn has_failures(&self) -> bool {
-        !self.failures.is_empty()
-    }
-
-    #[must_use]
-    pub fn summaries(&self) -> Vec<PluginSummary> {
-        self.registry.summaries()
-    }
-
-    pub fn into_registry(self) -> Result<PluginRegistry, PluginError> {
-        if self.failures.is_empty() {
-            Ok(self.registry)
-        } else {
-            Err(PluginError::LoadFailures(self.failures))
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-struct PluginDiscovery {
-    plugins: Vec<PluginDefinition>,
-    failures: Vec<PluginLoadFailure>,
-}
-
-impl PluginDiscovery {
-    fn push_plugin(&mut self, plugin: PluginDefinition) {
-        self.plugins.push(plugin);
-    }
-
-    fn push_failure(&mut self, failure: PluginLoadFailure) {
-        self.failures.push(failure);
-    }
-
-    fn extend(&mut self, other: Self) {
-        self.plugins.extend(other.plugins);
-        self.failures.extend(other.failures);
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct PluginRegistry {
-    plugins: Vec<RegisteredPlugin>,
-}
-
-impl PluginRegistry {
-    #[must_use]
-    pub fn new(mut plugins: Vec<RegisteredPlugin>) -> Self {
-        plugins.sort_by(|left, right| left.metadata().id.cmp(&right.metadata().id));
-        Self { plugins }
-    }
-
-    #[must_use]
-    pub fn plugins(&self) -> &[RegisteredPlugin] {
-        &self.plugins
-    }
-
-    #[must_use]
-    pub fn get(&self, plugin_id: &str) -> Option<&RegisteredPlugin> {
-        self.plugins
-            .iter()
-            .find(|plugin| plugin.metadata().id == plugin_id)
-    }
-
-    #[must_use]
-    pub fn contains(&self, plugin_id: &str) -> bool {
-        self.get(plugin_id).is_some()
-    }
-
-    #[must_use]
-    pub fn summaries(&self) -> Vec<PluginSummary> {
-        self.plugins.iter().map(RegisteredPlugin::summary).collect()
-    }
-
-    pub fn aggregated_hooks(&self) -> Result<PluginHooks, PluginError> {
-        self.plugins
-            .iter()
-            .filter(|plugin| plugin.is_enabled())
-            .try_fold(PluginHooks::default(), |acc, plugin| {
-                plugin.validate()?;
-                Ok(acc.merged_with(plugin.hooks()))
-            })
-    }
-
-    pub fn aggregated_tools(&self) -> Result<Vec<PluginTool>, PluginError> {
-        let mut tools = Vec::new();
-        let mut seen_names = BTreeMap::new();
-        for plugin in self.plugins.iter().filter(|plugin| plugin.is_enabled()) {
-            plugin.validate()?;
-            for tool in plugin.tools() {
-                if let Some(existing_plugin) =
-                    seen_names.insert(tool.definition().name.clone(), tool.plugin_id().to_string())
-                {
-                    return Err(PluginError::InvalidManifest(format!(
-                        "plugin tool `{}` is defined by both `{existing_plugin}` and `{}`",
-                        tool.definition().name,
-                        tool.plugin_id()
-                    )));
-                }
-                tools.push(tool.clone());
-            }
-        }
-        Ok(tools)
-    }
-
-    pub fn initialize(&self) -> Result<(), PluginError> {
-        for plugin in self.plugins.iter().filter(|plugin| plugin.is_enabled()) {
-            plugin.validate()?;
-            plugin.initialize()?;
-        }
-        Ok(())
-    }
-
-    pub fn shutdown(&self) -> Result<(), PluginError> {
-        for plugin in self
-            .plugins
-            .iter()
-            .rev()
-            .filter(|plugin| plugin.is_enabled())
-        {
-            plugin.shutdown()?;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PluginManagerConfig {
-    pub config_home: PathBuf,
-    pub enabled_plugins: BTreeMap<String, bool>,
-    pub external_dirs: Vec<PathBuf>,
-    pub install_root: Option<PathBuf>,
-    pub registry_path: Option<PathBuf>,
-    pub bundled_root: Option<PathBuf>,
-}
-
-impl PluginManagerConfig {
-    #[must_use]
-    pub fn new(config_home: impl Into<PathBuf>) -> Self {
-        Self {
-            config_home: config_home.into(),
-            enabled_plugins: BTreeMap::new(),
-            external_dirs: Vec::new(),
-            install_root: None,
-            registry_path: None,
-            bundled_root: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PluginManager {
-    config: PluginManagerConfig,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InstallOutcome {
-    pub plugin_id: String,
-    pub version: String,
-    pub install_path: PathBuf,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpdateOutcome {
-    pub plugin_id: String,
-    pub old_version: String,
-    pub new_version: String,
-    pub install_path: PathBuf,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PluginManifestValidationError {
-    EmptyField {
-        field: &'static str,
-    },
-    EmptyEntryField {
-        kind: &'static str,
-        field: &'static str,
-        name: Option<String>,
-    },
-    InvalidPermission {
-        permission: String,
-    },
-    DuplicatePermission {
-        permission: String,
-    },
-    DuplicateEntry {
-        kind: &'static str,
-        name: String,
-    },
-    MissingPath {
-        kind: &'static str,
-        path: PathBuf,
-    },
-    PathIsDirectory {
-        kind: &'static str,
-        path: PathBuf,
-    },
-    InvalidToolInputSchema {
-        tool_name: String,
-    },
-    InvalidToolRequiredPermission {
-        tool_name: String,
-        permission: String,
-    },
-}
-
-impl Display for PluginManifestValidationError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::EmptyField { field } => {
-                write!(f, "plugin manifest {field} cannot be empty")
-            }
-            Self::EmptyEntryField { kind, field, name } => match name {
-                Some(name) if !name.is_empty() => {
-                    write!(f, "plugin {kind} `{name}` {field} cannot be empty")
-                }
-                _ => write!(f, "plugin {kind} {field} cannot be empty"),
-            },
-            Self::InvalidPermission { permission } => {
-                write!(
-                    f,
-                    "plugin manifest permission `{permission}` must be one of read, write, or execute"
-                )
-            }
-            Self::DuplicatePermission { permission } => {
-                write!(f, "plugin manifest permission `{permission}` is duplicated")
-            }
-            Self::DuplicateEntry { kind, name } => {
-                write!(f, "plugin {kind} `{name}` is duplicated")
-            }
-            Self::MissingPath { kind, path } => {
-                write!(f, "{kind} path `{}` does not exist", path.display())
-            }
-            Self::PathIsDirectory { kind, path } => {
-                write!(f, "{kind} path `{}` must point to a file", path.display())
-            }
-            Self::InvalidToolInputSchema { tool_name } => {
-                write!(
-                    f,
-                    "plugin tool `{tool_name}` inputSchema must be a JSON object"
-                )
-            }
-            Self::InvalidToolRequiredPermission {
-                tool_name,
-                permission,
-            } => write!(
-                f,
-                "plugin tool `{tool_name}` requiredPermission `{permission}` must be read-only, workspace-write, or danger-full-access"
-            ),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum PluginError {
-    Io(std::io::Error),
-    Json(serde_json::Error),
-    ManifestValidation(Vec<PluginManifestValidationError>),
-    LoadFailures(Vec<PluginLoadFailure>),
-    InvalidManifest(String),
-    NotFound(String),
-    CommandFailed(String),
-}
-
-impl Display for PluginError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io(error) => write!(f, "{error}"),
-            Self::Json(error) => write!(f, "{error}"),
-            Self::ManifestValidation(errors) => {
-                for (index, error) in errors.iter().enumerate() {
-                    if index > 0 {
-                        write!(f, "; ")?;
-                    }
-                    write!(f, "{error}")?;
-                }
-                Ok(())
-            }
-            Self::LoadFailures(failures) => {
-                for (index, failure) in failures.iter().enumerate() {
-                    if index > 0 {
-                        write!(f, "; ")?;
-                    }
-                    write!(f, "{failure}")?;
-                }
-                Ok(())
-            }
-            Self::InvalidManifest(message)
-            | Self::NotFound(message)
-            | Self::CommandFailed(message) => write!(f, "{message}"),
-        }
-    }
-}
-
-impl std::error::Error for PluginError {}
-
-impl From<std::io::Error> for PluginError {
-    fn from(value: std::io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
-impl From<serde_json::Error> for PluginError {
-    fn from(value: serde_json::Error) -> Self {
-        Self::Json(value)
     }
 }

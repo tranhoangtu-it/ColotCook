@@ -1,14 +1,24 @@
-/// Plugin registry, manager, and builtin plugin definitions.
+//! Plugin registry, manager, and builtin plugin definitions.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{Display, Formatter};
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::PathBuf;
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
-use crate::types::*;
-use crate::discovery::*;
+use crate::discovery::{
+    copy_dir_all, describe_install_source, discover_plugin_dirs, ensure_object,
+    load_plugin_definition, load_plugin_from_directory, materialize_source, parse_install_source,
+    plugin_id, plugin_manifest_path, resolve_local_source, sanitize_plugin_id, unix_time_ms,
+    update_settings_json,
+};
+use crate::types::{
+    BuiltinPlugin, InstalledPluginRecord, InstalledPluginRegistry, Plugin, PluginDefinition,
+    PluginHooks, PluginInstallSource, PluginKind, PluginLifecycle, PluginManifest, PluginMetadata,
+    PluginTool, BUILTIN_MARKETPLACE, BUNDLED_MARKETPLACE, EXTERNAL_MARKETPLACE, REGISTRY_FILE_NAME,
+    SETTINGS_FILE_NAME,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegisteredPlugin {
@@ -871,7 +881,7 @@ impl PluginManager {
         }
     }
 
-    fn load_registry(&self) -> Result<InstalledPluginRegistry, PluginError> {
+    pub(crate) fn load_registry(&self) -> Result<InstalledPluginRegistry, PluginError> {
         let path = self.registry_path();
         match fs::read_to_string(&path) {
             Ok(contents) if contents.trim().is_empty() => Ok(InstalledPluginRegistry::default()),
@@ -883,7 +893,10 @@ impl PluginManager {
         }
     }
 
-    fn store_registry(&self, registry: &InstalledPluginRegistry) -> Result<(), PluginError> {
+    pub(crate) fn store_registry(
+        &self,
+        registry: &InstalledPluginRegistry,
+    ) -> Result<(), PluginError> {
         let path = self.registry_path();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -892,7 +905,7 @@ impl PluginManager {
         Ok(())
     }
 
-    fn write_enabled_state(
+    pub(crate) fn write_enabled_state(
         &self,
         plugin_id: &str,
         enabled: Option<bool>,
@@ -949,4 +962,3 @@ pub fn builtin_plugins() -> Vec<PluginDefinition> {
         tools: Vec::new(),
     })]
 }
-

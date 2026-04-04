@@ -1,6 +1,6 @@
-/// Plugin discovery, manifest loading, validation, and filesystem helpers.
+//! Plugin discovery, manifest loading, validation, and filesystem helpers.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -8,7 +8,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value};
 
-use crate::types::*;
+use crate::registry::{PluginError, PluginManifestValidationError};
+use crate::types::{
+    BuiltinPlugin, BundledPlugin, ExternalPlugin, PluginCommandManifest, PluginDefinition,
+    PluginHooks, PluginInstallSource, PluginKind, PluginLifecycle, PluginManifest, PluginMetadata,
+    PluginPermission, PluginTool, PluginToolDefinition, PluginToolManifest, PluginToolPermission,
+    RawPluginManifest, RawPluginToolManifest, LEGACY_MANIFEST_RELATIVE_PATH, MANIFEST_FILE_NAME,
+    MANIFEST_RELATIVE_PATH,
+};
 
 pub(crate) fn load_plugin_definition(
     root: &Path,
@@ -412,7 +419,10 @@ pub(crate) fn resolve_tools(
         .collect()
 }
 
-pub(crate) fn validate_hook_paths(root: Option<&Path>, hooks: &PluginHooks) -> Result<(), PluginError> {
+pub(crate) fn validate_hook_paths(
+    root: Option<&Path>,
+    hooks: &PluginHooks,
+) -> Result<(), PluginError> {
     let Some(root) = root else {
         return Ok(());
     };
@@ -440,7 +450,10 @@ pub(crate) fn validate_lifecycle_paths(
     Ok(())
 }
 
-pub(crate) fn validate_tool_paths(root: Option<&Path>, tools: &[PluginTool]) -> Result<(), PluginError> {
+pub(crate) fn validate_tool_paths(
+    root: Option<&Path>,
+    tools: &[PluginTool],
+) -> Result<(), PluginError> {
     let Some(root) = root else {
         return Ok(());
     };
@@ -450,7 +463,11 @@ pub(crate) fn validate_tool_paths(root: Option<&Path>, tools: &[PluginTool]) -> 
     Ok(())
 }
 
-pub(crate) fn validate_command_path(root: &Path, entry: &str, kind: &str) -> Result<(), PluginError> {
+pub(crate) fn validate_command_path(
+    root: &Path,
+    entry: &str,
+    kind: &str,
+) -> Result<(), PluginError> {
     if is_literal_command(entry) {
         return Ok(());
     }
@@ -681,7 +698,10 @@ pub(crate) fn update_settings_json(
     Ok(())
 }
 
-pub(crate) fn ensure_object<'a>(root: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<String, Value> {
+pub(crate) fn ensure_object<'a>(
+    root: &'a mut Map<String, Value>,
+    key: &str,
+) -> &'a mut Map<String, Value> {
     if !root.get(key).is_some_and(Value::is_object) {
         root.insert(key.to_string(), Value::Object(Map::new()));
     }

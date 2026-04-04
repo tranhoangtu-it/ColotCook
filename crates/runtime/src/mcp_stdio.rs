@@ -2073,9 +2073,7 @@ mod tests {
             } => {
                 assert_eq!(server_name, "broken");
                 assert_eq!(method, "tools/call");
-                assert!(
-                    details.contains("expected ident") || details.contains("expected value")
-                );
+                assert!(details.contains("expected ident") || details.contains("expected value"));
             }
             other => panic!("expected invalid response error, got {other:?}"),
         }
