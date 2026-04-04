@@ -39,13 +39,17 @@ use reports::{
     render_diff_report_for, render_export_text, render_memory_report, render_repl_help,
     render_version_report, resolve_export_path, run_init, status_context, StatusUsage,
 };
-use session_management::{resolve_session_reference, LATEST_SESSION_REFERENCE, PRIMARY_SESSION_EXTENSION};
+use session_management::{
+    resolve_session_reference, LATEST_SESSION_REFERENCE, PRIMARY_SESSION_EXTENSION,
+};
 
 #[cfg(test)]
 use reports::format_unknown_slash_command_message;
 // Re-export items needed by inline tests via `super::`.
 #[cfg(test)]
-use arg_parsing::{resolve_model_alias, slash_command_completion_candidates_with_sessions, CliOutputFormat};
+use arg_parsing::{
+    resolve_model_alias, slash_command_completion_candidates_with_sessions, CliOutputFormat,
+};
 #[cfg(test)]
 use reports::{
     format_bughunter_report, format_commit_preflight_report, format_commit_skipped_report,
@@ -400,7 +404,6 @@ fn run_repl(
 
     Ok(())
 }
-
 
 #[allow(clippy::too_many_lines)]
 fn print_help_to(out: &mut impl Write) -> io::Result<()> {

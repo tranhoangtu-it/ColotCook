@@ -378,7 +378,7 @@ pub(crate) fn describe_tool_progress(name: &str, input: &str) -> String {
     }
 }
 
-/// Multi-provider AI client that dispatches to Anthropic, Gemini, OpenAI, etc.
+/// Multi-provider AI client that dispatches to Anthropic, Gemini, `OpenAI`, etc.
 pub(crate) struct MultiProviderRuntimeClient {
     runtime: tokio::runtime::Runtime,
     client: ProviderClient,

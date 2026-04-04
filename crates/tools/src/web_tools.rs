@@ -44,7 +44,7 @@ pub(crate) fn execute_web_fetch(input: &WebFetchInput) -> Result<WebFetchOutput,
     })
 }
 
-/// Search DuckDuckGo and return extracted hits.
+/// Search `DuckDuckGo` and return extracted hits.
 pub(crate) fn execute_web_search(input: &WebSearchInput) -> Result<WebSearchOutput, String> {
     let started = Instant::now();
     let client = build_http_client()?;
@@ -125,7 +125,7 @@ pub(crate) fn normalize_fetch_url(url: &str) -> Result<String, String> {
     Ok(parsed.to_string())
 }
 
-/// Build the DuckDuckGo lite search URL for a query.
+/// Build the `DuckDuckGo` lite search URL for a query.
 pub(crate) fn build_search_url(query: &str) -> Result<reqwest::Url, String> {
     if let Ok(base) = std::env::var("COLOTCOOK_WEB_SEARCH_BASE_URL") {
         let mut url = reqwest::Url::parse(&base).map_err(|error| error.to_string())?;
@@ -255,7 +255,7 @@ pub(crate) fn preview_text(input: &str, max_chars: usize) -> String {
     format!("{}…", shortened.trim_end())
 }
 
-/// Extract search result hits from DuckDuckGo HTML.
+/// Extract search result hits from `DuckDuckGo` HTML.
 pub(crate) fn extract_search_hits(html: &str) -> Vec<SearchHit> {
     let mut hits = Vec::new();
     let mut remaining = html;
@@ -293,7 +293,7 @@ pub(crate) fn extract_search_hits(html: &str) -> Vec<SearchHit> {
     hits
 }
 
-/// Extract search result hits from DuckDuckGo HTML.
+/// Extract search result hits from `DuckDuckGo` HTML.
 pub(crate) fn extract_search_hits_from_generic_links(html: &str) -> Vec<SearchHit> {
     let mut hits = Vec::new();
     let mut remaining = html;
@@ -347,7 +347,7 @@ pub(crate) fn extract_quoted_value(input: &str) -> Option<(String, &str)> {
     Some((rest[..end].to_string(), &rest[end + quote.len_utf8()..]))
 }
 
-/// Decode a DuckDuckGo redirect URL to the real destination.
+/// Decode a `DuckDuckGo` redirect URL to the real destination.
 pub(crate) fn decode_duckduckgo_redirect(url: &str) -> Option<String> {
     if url.starts_with("http://") || url.starts_with("https://") {
         return Some(html_entity_decode_url(url));

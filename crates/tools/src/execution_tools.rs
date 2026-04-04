@@ -367,7 +367,7 @@ pub(crate) fn iso8601_timestamp() -> String {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-/// Execute a PowerShell script block.
+/// Execute a `PowerShell` script block.
 pub(crate) fn execute_powershell(
     input: PowerShellInput,
 ) -> std::io::Result<runtime::BashCommandOutput> {
@@ -381,7 +381,7 @@ pub(crate) fn execute_powershell(
     )
 }
 
-/// Detect the available PowerShell executable.
+/// Detect the available `PowerShell` executable.
 pub(crate) fn detect_powershell_shell() -> std::io::Result<&'static str> {
     if command_exists("pwsh") {
         Ok("pwsh")
