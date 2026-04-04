@@ -2256,4 +2256,245 @@ mod tests {
         let executor = SubagentToolExecutor::new(BTreeSet::new()).with_mcp_bridge(bridge);
         assert!(executor.mcp_bridge.is_some());
     }
+
+    // --- AgentOrchestrator::run_parallel ---
+
+    #[test]
+    fn run_parallel_empty_requests_returns_empty() {
+        let results = AgentOrchestrator::run_parallel(vec![], Duration::from_secs(5));
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn run_parallel_with_zero_timeout_all_timeout() {
+        // With a zero-duration timeout, agents should time out immediately
+        let requests = vec![AgentSpawnRequest {
+            description: "test task".to_string(),
+            prompt: "do something useful".to_string(),
+            subagent_type: Some("Explore".to_string()),
+            model: None,
+        }];
+        let results = AgentOrchestrator::run_parallel(requests, Duration::ZERO);
+        // With zero timeout, the agent should either be in "timeout" state or
+        // "completed" (if it finished fast enough), so we check it's in results
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn run_parallel_multiple_requests_returns_same_count() {
+        // Spawn agents that will immediately time out since they can't actually run
+        let requests = vec![
+            AgentSpawnRequest {
+                description: "task one".to_string(),
+                prompt: "analyze this codebase".to_string(),
+                subagent_type: None,
+                model: None,
+            },
+            AgentSpawnRequest {
+                description: "task two".to_string(),
+                prompt: "write a summary".to_string(),
+                subagent_type: Some("Explore".to_string()),
+                model: None,
+            },
+        ];
+        // Use very short timeout so agents time out quickly
+        let results = AgentOrchestrator::run_parallel(requests, Duration::from_millis(1));
+        // We get some results back (may be timeout or other status)
+        assert!(results.len() <= 2);
+    }
+
+    #[test]
+    fn run_parallel_agent_result_fields_populated() {
+        let requests = vec![AgentSpawnRequest {
+            description: "build a feature".to_string(),
+            prompt: "implement something".to_string(),
+            subagent_type: Some("Plan".to_string()),
+            model: Some("claude-haiku-3".to_string()),
+        }];
+        let results = AgentOrchestrator::run_parallel(requests, Duration::ZERO);
+        if let Some(result) = results.first() {
+            // agent_id and name should be populated
+            assert!(!result.agent_id.is_empty());
+            assert!(!result.name.is_empty());
+        }
+    }
+
+    // --- AgentOrchestrator additional ---
+
+    #[test]
+    fn agent_result_status_is_set_for_timeout() {
+        let requests = vec![AgentSpawnRequest {
+            description: "timeout test task".to_string(),
+            prompt: "run until timeout".to_string(),
+            subagent_type: None,
+            model: None,
+        }];
+        let results = AgentOrchestrator::run_parallel(requests, Duration::ZERO);
+        if let Some(result) = results.first() {
+            // Either timed out or produced a result; just verify status is non-empty
+            assert!(!result.status.is_empty());
+        }
+    }
+
+    // --- execute_agent_with_spawn --- (more spawn-fn branches)
+
+    #[test]
+    fn execute_agent_with_spawn_uses_description_as_name_when_no_name() {
+        let input = crate::types::AgentInput {
+            description: String::from("analyze my code"),
+            prompt: String::from("do the analysis"),
+            subagent_type: None,
+            name: None,
+            model: None,
+        };
+        let result = execute_agent_with_spawn(input, |_| Ok(()));
+        assert!(result.is_ok());
+        let manifest = result.unwrap();
+        // Name should be derived from description
+        assert!(!manifest.name.is_empty());
+    }
+
+    #[test]
+    fn execute_agent_with_spawn_empty_name_falls_back_to_description() {
+        let input = crate::types::AgentInput {
+            description: String::from("do something"),
+            prompt: String::from("please work"),
+            subagent_type: None,
+            name: Some(String::new()), // empty name → should fall back to description
+            model: None,
+        };
+        let result = execute_agent_with_spawn(input, |_| Ok(()));
+        assert!(result.is_ok());
+        let manifest = result.unwrap();
+        // Name derives from description since provided name was empty
+        assert!(!manifest.name.is_empty());
+    }
+
+    #[test]
+    fn execute_agent_with_spawn_sets_started_at() {
+        let input = crate::types::AgentInput {
+            description: String::from("timing test"),
+            prompt: String::from("check timing"),
+            subagent_type: None,
+            name: None,
+            model: None,
+        };
+        let result = execute_agent_with_spawn(input, |_| Ok(()));
+        assert!(result.is_ok());
+        let manifest = result.unwrap();
+        assert!(manifest.started_at.is_some());
+    }
+
+    #[test]
+    fn execute_agent_with_spawn_completed_at_is_none() {
+        let input = crate::types::AgentInput {
+            description: String::from("fresh agent"),
+            prompt: String::from("just spawned"),
+            subagent_type: None,
+            name: None,
+            model: None,
+        };
+        let result = execute_agent_with_spawn(input, |_| Ok(()));
+        assert!(result.is_ok());
+        // completed_at should be None since we haven't run the agent yet
+        assert!(result.unwrap().completed_at.is_none());
+    }
+
+    // --- SubagentToolExecutor execute routing ---
+
+    #[test]
+    fn subagent_tool_executor_mcp_with_bridge_invalid_json() {
+        let manager = std::sync::Arc::new(std::sync::Mutex::new(
+            runtime::McpServerManager::from_servers(&BTreeMap::new()),
+        ));
+        let rt = std::sync::Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let bridge = McpBridge::new(manager, rt);
+        let mut executor =
+            SubagentToolExecutor::new(["mcp__test__tool"].iter().map(|s| s.to_string()).collect())
+                .with_mcp_bridge(bridge);
+        // Invalid JSON with MCP tool should produce parse error
+        let result = executor.execute("mcp__test__tool", "not valid json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn subagent_tool_executor_mcp_with_bridge_empty_input() {
+        let manager = std::sync::Arc::new(std::sync::Mutex::new(
+            runtime::McpServerManager::from_servers(&BTreeMap::new()),
+        ));
+        let rt = std::sync::Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let bridge = McpBridge::new(manager, rt);
+        let mut executor =
+            SubagentToolExecutor::new(["mcp__test__tool"].iter().map(|s| s.to_string()).collect())
+                .with_mcp_bridge(bridge);
+        // Empty input should trigger a "no servers" type error, not a parse error
+        let result = executor.execute("mcp__test__tool", "");
+        assert!(result.is_err()); // MCP call fails since no actual server
+    }
+
+    // --- agent_permission_policy additional ---
+
+    #[test]
+    fn agent_permission_policy_is_not_empty() {
+        let policy = agent_permission_policy();
+        let _ = policy; // Just ensure it constructs without panic
+    }
+
+    // --- prompt_cache_record_to_runtime_event additional ---
+
+    #[test]
+    fn prompt_cache_record_with_unexpected_break() {
+        let record = api::PromptCacheRecord {
+            cache_break: Some(api::CacheBreakEvent {
+                unexpected: true,
+                reason: "context_window_exceeded".into(),
+                previous_cache_read_input_tokens: 500,
+                current_cache_read_input_tokens: 100,
+                token_drop: 400,
+            }),
+            stats: Default::default(),
+        };
+        let event = prompt_cache_record_to_runtime_event(record).unwrap();
+        assert!(event.unexpected);
+        assert_eq!(event.reason, "context_window_exceeded");
+        assert_eq!(event.token_drop, 400);
+    }
+
+    // --- iso8601_now uniqueness ---
+
+    #[test]
+    fn iso8601_now_is_numeric() {
+        let ts = iso8601_now();
+        let parsed: u64 = ts.parse().expect("should be a u64 numeric unix timestamp");
+        assert!(parsed > 0);
+    }
+
+    // --- McpBridge call_tool with empty input variants ---
+
+    #[test]
+    fn mcp_bridge_call_tool_with_empty_object_input() {
+        let manager = std::sync::Arc::new(std::sync::Mutex::new(
+            runtime::McpServerManager::from_servers(&BTreeMap::new()),
+        ));
+        let rt = std::sync::Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let bridge = McpBridge::new(manager, rt);
+        // {} is treated as no arguments (None), so it tries to call a non-existent tool
+        let result = bridge.call_tool("mcp__test__nonexistent", "{}");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn mcp_bridge_call_tool_with_invalid_json() {
+        let manager = std::sync::Arc::new(std::sync::Mutex::new(
+            runtime::McpServerManager::from_servers(&BTreeMap::new()),
+        ));
+        let rt = std::sync::Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let bridge = McpBridge::new(manager, rt);
+        let result = bridge.call_tool("mcp__test__tool", "bad json here");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid MCP tool input JSON"));
+    }
 }

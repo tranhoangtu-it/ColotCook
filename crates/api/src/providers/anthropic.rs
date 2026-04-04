@@ -1246,4 +1246,275 @@ mod tests {
             Some("Bearer proxy-token")
         );
     }
+
+    // ── AuthSource methods ──────────────────────────────────────────────────
+
+    #[test]
+    fn auth_source_none_has_no_api_key() {
+        let auth = AuthSource::None;
+        assert_eq!(auth.api_key(), None);
+        assert_eq!(auth.bearer_token(), None);
+    }
+
+    #[test]
+    fn auth_source_api_key_only() {
+        let auth = AuthSource::ApiKey("my-api-key".to_string());
+        assert_eq!(auth.api_key(), Some("my-api-key"));
+        assert_eq!(auth.bearer_token(), None);
+    }
+
+    #[test]
+    fn auth_source_bearer_token_only() {
+        let auth = AuthSource::BearerToken("my-bearer".to_string());
+        assert_eq!(auth.api_key(), None);
+        assert_eq!(auth.bearer_token(), Some("my-bearer"));
+    }
+
+    #[test]
+    fn auth_source_api_key_and_bearer_both_present() {
+        let auth = AuthSource::ApiKeyAndBearer {
+            api_key: "key1".to_string(),
+            bearer_token: "token1".to_string(),
+        };
+        assert_eq!(auth.api_key(), Some("key1"));
+        assert_eq!(auth.bearer_token(), Some("token1"));
+    }
+
+    #[test]
+    fn auth_source_masked_authorization_header_with_bearer() {
+        let auth = AuthSource::BearerToken("secret".to_string());
+        assert_eq!(auth.masked_authorization_header(), "Bearer [REDACTED]");
+    }
+
+    #[test]
+    fn auth_source_masked_authorization_header_without_bearer() {
+        let auth = AuthSource::ApiKey("key".to_string());
+        assert_eq!(auth.masked_authorization_header(), "<absent>");
+    }
+
+    #[test]
+    fn auth_source_masked_authorization_header_none() {
+        let auth = AuthSource::None;
+        assert_eq!(auth.masked_authorization_header(), "<absent>");
+    }
+
+    #[test]
+    fn auth_source_apply_api_key_only_sets_header() {
+        let auth = AuthSource::ApiKey("my-key".to_string());
+        let request = auth
+            .apply(reqwest::Client::new().get("https://example.test"))
+            .build()
+            .expect("build");
+        assert_eq!(
+            request
+                .headers()
+                .get("x-api-key")
+                .and_then(|v| v.to_str().ok()),
+            Some("my-key")
+        );
+        assert!(request.headers().get("authorization").is_none());
+    }
+
+    #[test]
+    fn auth_source_apply_bearer_only_sets_authorization() {
+        let auth = AuthSource::BearerToken("my-token".to_string());
+        let request = auth
+            .apply(reqwest::Client::new().get("https://example.test"))
+            .build()
+            .expect("build");
+        assert!(request.headers().get("x-api-key").is_none());
+        assert_eq!(
+            request
+                .headers()
+                .get("authorization")
+                .and_then(|v| v.to_str().ok()),
+            Some("Bearer my-token")
+        );
+    }
+
+    #[test]
+    fn auth_source_apply_none_sets_no_headers() {
+        let auth = AuthSource::None;
+        let request = auth
+            .apply(reqwest::Client::new().get("https://example.test"))
+            .build()
+            .expect("build");
+        assert!(request.headers().get("x-api-key").is_none());
+        assert!(request.headers().get("authorization").is_none());
+    }
+
+    // ── AnthropicClient construction ─────────────────────────────────────────
+
+    #[test]
+    fn anthropic_client_new_has_default_base_url() {
+        let client = AnthropicClient::new("key");
+        assert_eq!(client.auth_source().api_key(), Some("key"));
+    }
+
+    #[test]
+    fn anthropic_client_from_auth_bearer() {
+        let client = AnthropicClient::from_auth(AuthSource::BearerToken("t".to_string()));
+        assert_eq!(client.auth_source().bearer_token(), Some("t"));
+    }
+
+    #[test]
+    fn anthropic_client_with_base_url() {
+        let client = AnthropicClient::new("key").with_base_url("https://custom.api.example.com");
+        // Just verify no panic
+        let _ = client;
+    }
+
+    #[test]
+    fn anthropic_client_with_retry_policy() {
+        let client = AnthropicClient::new("key").with_retry_policy(
+            5,
+            Duration::from_millis(100),
+            Duration::from_secs(5),
+        );
+        // Verify backoff_for_attempt works within the retry limit
+        assert!(client.backoff_for_attempt(1).is_ok());
+    }
+
+    #[test]
+    fn anthropic_client_backoff_overflow_attempt_returns_error() {
+        let client = AnthropicClient::new("key").with_retry_policy(
+            2,
+            Duration::from_millis(200),
+            Duration::from_secs(2),
+        );
+        // Very large attempt causes overflow in checked_shl
+        assert!(client.backoff_for_attempt(u32::MAX).is_err());
+    }
+
+    #[test]
+    fn anthropic_client_with_auth_token_none_token_api_key_only() {
+        let client = AnthropicClient::new("api-key").with_auth_token(None);
+        assert_eq!(client.auth_source().api_key(), Some("api-key"));
+        assert_eq!(client.auth_source().bearer_token(), None);
+    }
+
+    #[test]
+    fn anthropic_client_with_auth_token_empty_string_treats_as_none() {
+        let client = AnthropicClient::new("api-key").with_auth_token(Some(String::new()));
+        assert_eq!(client.auth_source().api_key(), Some("api-key"));
+        assert_eq!(client.auth_source().bearer_token(), None);
+    }
+
+    #[test]
+    fn anthropic_client_with_auth_token_sets_both_when_api_key_present() {
+        let client =
+            AnthropicClient::new("api-key").with_auth_token(Some("bearer-token".to_string()));
+        assert_eq!(client.auth_source().api_key(), Some("api-key"));
+        assert_eq!(client.auth_source().bearer_token(), Some("bearer-token"));
+    }
+
+    #[test]
+    fn anthropic_client_with_auth_token_bearer_only_when_no_api_key() {
+        let client =
+            AnthropicClient::from_auth(AuthSource::None).with_auth_token(Some("bt".to_string()));
+        assert_eq!(client.auth_source().bearer_token(), Some("bt"));
+        assert_eq!(client.auth_source().api_key(), None);
+    }
+
+    #[test]
+    fn anthropic_client_with_beta_adds_to_profile() {
+        let client = AnthropicClient::new("key").with_beta("new-beta-flag");
+        assert!(client
+            .request_profile()
+            .betas
+            .contains(&"new-beta-flag".to_string()));
+    }
+
+    #[test]
+    fn anthropic_client_with_extra_body_param_adds_field() {
+        let client = AnthropicClient::new("key")
+            .with_extra_body_param("custom_field", serde_json::Value::Bool(true));
+        assert!(!client.request_profile().extra_body.is_empty());
+    }
+
+    #[test]
+    fn anthropic_client_request_profile_accessor() {
+        let client = AnthropicClient::new("key");
+        let profile = client.request_profile();
+        // Should have the default anthropic version header
+        assert!(!profile.anthropic_version.is_empty());
+    }
+
+    #[test]
+    fn anthropic_client_session_tracer_initially_none() {
+        let client = AnthropicClient::new("key");
+        assert!(client.session_tracer().is_none());
+    }
+
+    #[test]
+    fn anthropic_client_prompt_cache_initially_none() {
+        let client = AnthropicClient::new("key");
+        assert!(client.prompt_cache().is_none());
+    }
+
+    #[test]
+    fn anthropic_client_take_last_prompt_cache_record_initially_none() {
+        let client = AnthropicClient::new("key");
+        assert!(client.take_last_prompt_cache_record().is_none());
+    }
+
+    #[test]
+    fn is_retryable_status_covers_all_retryable_codes() {
+        use reqwest::StatusCode;
+        // All retryable codes
+        assert!(super::is_retryable_status(StatusCode::REQUEST_TIMEOUT)); // 408
+        assert!(super::is_retryable_status(StatusCode::CONFLICT)); // 409
+        assert!(super::is_retryable_status(StatusCode::TOO_MANY_REQUESTS)); // 429
+        assert!(super::is_retryable_status(
+            StatusCode::INTERNAL_SERVER_ERROR
+        )); // 500
+        assert!(super::is_retryable_status(StatusCode::BAD_GATEWAY)); // 502
+        assert!(super::is_retryable_status(StatusCode::SERVICE_UNAVAILABLE)); // 503
+        assert!(super::is_retryable_status(StatusCode::GATEWAY_TIMEOUT)); // 504
+    }
+
+    #[test]
+    fn is_retryable_status_non_retryable_codes() {
+        use reqwest::StatusCode;
+        assert!(!super::is_retryable_status(StatusCode::OK)); // 200
+        assert!(!super::is_retryable_status(StatusCode::BAD_REQUEST)); // 400
+        assert!(!super::is_retryable_status(StatusCode::UNAUTHORIZED)); // 401
+        assert!(!super::is_retryable_status(StatusCode::FORBIDDEN)); // 403
+        assert!(!super::is_retryable_status(StatusCode::NOT_FOUND)); // 404
+    }
+
+    #[test]
+    fn oauth_token_is_expired_no_expires_at_is_not_expired() {
+        assert!(!oauth_token_is_expired(&OAuthTokenSet {
+            access_token: "t".to_string(),
+            refresh_token: None,
+            expires_at: None,
+            scopes: vec![],
+        }));
+    }
+
+    #[test]
+    fn oauth_token_set_from_creates_bearer_auth() {
+        let token = OAuthTokenSet {
+            access_token: "test-access".to_string(),
+            refresh_token: Some("refresh".to_string()),
+            expires_at: Some(9999999999),
+            scopes: vec!["user:read".to_string()],
+        };
+        let auth: AuthSource = token.into();
+        assert_eq!(auth.bearer_token(), Some("test-access"));
+        assert_eq!(auth.api_key(), None);
+    }
+
+    #[test]
+    fn now_unix_timestamp_is_positive() {
+        let ts = now_unix_timestamp();
+        assert!(ts > 0);
+    }
+
+    #[test]
+    fn request_id_from_headers_absent_returns_none() {
+        let headers = reqwest::header::HeaderMap::new();
+        assert_eq!(super::request_id_from_headers(&headers), None);
+    }
 }

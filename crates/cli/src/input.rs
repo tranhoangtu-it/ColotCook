@@ -327,4 +327,156 @@ mod tests {
         let helper = editor.editor.helper().expect("helper should exist");
         assert_eq!(helper.completions, vec!["/model opus".to_string()]);
     }
+
+    // ── slash_command_prefix edge cases ─────────────────────────────────────
+
+    #[test]
+    fn slash_command_prefix_empty_string() {
+        assert_eq!(slash_command_prefix("", 0), None);
+    }
+
+    #[test]
+    fn slash_command_prefix_just_slash() {
+        assert_eq!(slash_command_prefix("/", 1), Some("/"));
+    }
+
+    #[test]
+    fn slash_command_prefix_non_slash_start() {
+        assert_eq!(slash_command_prefix("hello", 5), None);
+    }
+
+    #[test]
+    fn slash_command_prefix_pos_not_at_end() {
+        // pos must equal line.len() for prefix to be returned
+        assert_eq!(slash_command_prefix("/help", 3), None);
+    }
+
+    #[test]
+    fn slash_command_prefix_full_command() {
+        assert_eq!(slash_command_prefix("/session", 8), Some("/session"));
+    }
+
+    #[test]
+    fn slash_command_prefix_command_with_space() {
+        assert_eq!(
+            slash_command_prefix("/session list", 13),
+            Some("/session list")
+        );
+    }
+
+    // ── SlashCommandHelper ─────────────────────────────────────────────────
+
+    #[test]
+    fn slash_command_helper_filters_non_slash_completions() {
+        let helper = SlashCommandHelper::new(vec![
+            "/help".to_string(),
+            "not-slash".to_string(), // filtered out
+            "/status".to_string(),
+        ]);
+        assert_eq!(helper.completions.len(), 2);
+        assert!(helper.completions.iter().all(|c| c.starts_with('/')));
+    }
+
+    #[test]
+    fn slash_command_helper_deduplicates() {
+        let helper = SlashCommandHelper::new(vec![
+            "/help".to_string(),
+            "/help".to_string(),
+            "/status".to_string(),
+        ]);
+        assert_eq!(helper.completions.len(), 2);
+    }
+
+    #[test]
+    fn slash_command_helper_complete_no_match() {
+        let helper = SlashCommandHelper::new(vec!["/help".to_string()]);
+        let history = DefaultHistory::new();
+        let ctx = Context::new(&history);
+        let (_, matches) = helper.complete("/xyz", 4, &ctx).expect("completion");
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn slash_command_helper_complete_all_when_just_slash() {
+        let helper = SlashCommandHelper::new(vec![
+            "/help".to_string(),
+            "/status".to_string(),
+            "/model".to_string(),
+        ]);
+        let history = DefaultHistory::new();
+        let ctx = Context::new(&history);
+        let (_, matches) = helper.complete("/", 1, &ctx).expect("completion");
+        assert_eq!(matches.len(), 3);
+    }
+
+    #[test]
+    fn slash_command_helper_highlight_char_tracks_current_line() {
+        let helper = SlashCommandHelper::new(vec![]);
+        let _ = helper.highlight_char("/test", 5, rustyline::highlight::CmdKind::Other);
+        assert_eq!(helper.current_line(), "/test");
+    }
+
+    #[test]
+    fn slash_command_helper_reset_current_line() {
+        let helper = SlashCommandHelper::new(vec![]);
+        let _ = helper.highlight("/draft message", 14);
+        assert_eq!(helper.current_line(), "/draft message");
+        helper.reset_current_line();
+        assert_eq!(helper.current_line(), "");
+    }
+
+    // ── ReadOutcome variants ─────────────────────────────────────────────────
+
+    #[test]
+    fn read_outcome_debug_format() {
+        assert_eq!(format!("{:?}", super::ReadOutcome::Cancel), "Cancel");
+        assert_eq!(format!("{:?}", super::ReadOutcome::Exit), "Exit");
+        assert_eq!(
+            format!("{:?}", super::ReadOutcome::Submit("hello".into())),
+            "Submit(\"hello\")"
+        );
+    }
+
+    #[test]
+    fn read_outcome_equality() {
+        assert_eq!(super::ReadOutcome::Cancel, super::ReadOutcome::Cancel);
+        assert_eq!(super::ReadOutcome::Exit, super::ReadOutcome::Exit);
+        assert_eq!(
+            super::ReadOutcome::Submit("x".into()),
+            super::ReadOutcome::Submit("x".into())
+        );
+        assert_ne!(super::ReadOutcome::Cancel, super::ReadOutcome::Exit);
+    }
+
+    // ── push_history ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn push_history_with_content_is_added() {
+        let mut editor = LineEditor::new("> ", vec![]);
+        editor.push_history("valid entry");
+        assert_eq!(editor.editor.history().len(), 1);
+    }
+
+    #[test]
+    fn push_history_only_whitespace_ignored() {
+        let mut editor = LineEditor::new("> ", vec![]);
+        editor.push_history("\t\n ");
+        assert_eq!(editor.editor.history().len(), 0);
+    }
+
+    // ── LineEditor::new ───────────────────────────────────────────────────────
+
+    #[test]
+    fn line_editor_created_with_completions() {
+        let editor = LineEditor::new(">>> ", vec!["/help".to_string(), "/quit".to_string()]);
+        let helper = editor.editor.helper().expect("helper should exist");
+        assert_eq!(helper.completions.len(), 2);
+    }
+
+    #[test]
+    fn line_editor_created_with_empty_completions() {
+        let editor = LineEditor::new("> ", vec![]);
+        let helper = editor.editor.helper().expect("helper should exist");
+        assert!(helper.completions.is_empty());
+    }
 }

@@ -640,6 +640,200 @@ mod tests {
     fn command_exists_nonexistent_command_returns_false() {
         assert!(!command_exists("__nonexistent_command_xyz_123__"));
     }
+
+    // ── render_suggestion_line ──────────────────────────────────────────────
+
+    #[test]
+    fn render_suggestion_line_empty_suggestions_returns_none() {
+        let result = render_suggestion_line("Hint", &[]);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn render_suggestion_line_one_suggestion() {
+        let suggestions = vec!["help".to_string()];
+        let result = render_suggestion_line("Did you mean", &suggestions);
+        assert!(result.is_some());
+        let line = result.unwrap();
+        assert!(line.contains("help"));
+        assert!(line.contains("Did you mean"));
+    }
+
+    #[test]
+    fn render_suggestion_line_multiple_suggestions_joined() {
+        let suggestions = vec!["help".to_string(), "hello".to_string(), "heap".to_string()];
+        let result = render_suggestion_line("Suggestions", &suggestions);
+        assert!(result.is_some());
+        let line = result.unwrap();
+        assert!(line.contains("help"));
+        assert!(line.contains("hello"));
+        assert!(line.contains("heap"));
+    }
+
+    // ── indent_block ────────────────────────────────────────────────────────
+
+    #[test]
+    fn indent_block_single_line() {
+        let result = indent_block("hello", 4);
+        assert_eq!(result, "    hello");
+    }
+
+    #[test]
+    fn indent_block_multiple_lines() {
+        let result = indent_block("line1\nline2\nline3", 2);
+        assert_eq!(result, "  line1\n  line2\n  line3");
+    }
+
+    #[test]
+    fn indent_block_zero_spaces() {
+        let result = indent_block("hello", 0);
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn indent_block_empty_string() {
+        // Empty string has no lines, so nothing to indent
+        let result = indent_block("", 4);
+        assert_eq!(result, "");
+    }
+
+    // ── recent_user_context ────────────────────────────────────────────────
+
+    #[test]
+    fn recent_user_context_empty_session_returns_no_prior_messages() {
+        use colotcook_runtime::Session;
+        let session = Session::new();
+        let result = recent_user_context(&session, 5);
+        assert_eq!(result, "<no prior user messages>");
+    }
+
+    #[test]
+    fn recent_user_context_with_messages_returns_numbered_list() {
+        use colotcook_runtime::{ContentBlock, ConversationMessage, MessageRole, Session};
+        let mut session = Session::new();
+        session.messages.push(ConversationMessage {
+            role: MessageRole::User,
+            blocks: vec![ContentBlock::Text {
+                text: "Hello world".to_string(),
+            }],
+            usage: None,
+        });
+        let result = recent_user_context(&session, 5);
+        assert!(result.contains("Hello world"));
+        assert!(result.contains("1."));
+    }
+
+    #[test]
+    fn recent_user_context_limits_to_count() {
+        use colotcook_runtime::{ContentBlock, ConversationMessage, MessageRole, Session};
+        let mut session = Session::new();
+        for i in 1..=5 {
+            session.messages.push(ConversationMessage {
+                role: MessageRole::User,
+                blocks: vec![ContentBlock::Text {
+                    text: format!("Message {i}"),
+                }],
+                usage: None,
+            });
+        }
+        let result = recent_user_context(&session, 2);
+        // Should only have 2 most recent messages
+        let lines: Vec<_> = result.lines().collect();
+        assert_eq!(lines.len(), 2);
+    }
+
+    // ── write_temp_text_file ────────────────────────────────────────────────
+
+    #[test]
+    fn write_temp_text_file_creates_file_with_content() {
+        let path =
+            write_temp_text_file("test-temp-file.txt", "hello temp").expect("write temp file");
+        let content = std::fs::read_to_string(&path).expect("read temp file");
+        assert_eq!(content, "hello temp");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn write_temp_text_file_returns_temp_dir_path() {
+        let path = write_temp_text_file("test-dir-check.txt", "data").expect("write temp file");
+        let temp_dir = std::env::temp_dir();
+        assert!(path.starts_with(temp_dir));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // ── open_browser ────────────────────────────────────────────────────────
+
+    #[test]
+    fn open_browser_with_valid_url_does_not_panic() {
+        // We just test that the function runs without panicking for a valid URL.
+        // On CI without a display, it may fail with NotFound which is acceptable.
+        let result = open_browser("https://example.com");
+        // Either Ok or Err (browser not available in CI) — just not a panic
+        let _ = result;
+    }
+
+    // ── git_output ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn git_output_failing_command_returns_error() {
+        let result = git_output(&["__nonexistent_git_subcommand_xyz__"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn git_output_valid_command_returns_output() {
+        // "git --version" is available on any dev machine
+        let result = git_output(&["--version"]);
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("git"));
+    }
+
+    // ── git_status_ok ──────────────────────────────────────────────────────
+
+    #[test]
+    fn git_status_ok_valid_command_succeeds() {
+        let result = git_status_ok(&["--version"]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn git_status_ok_invalid_command_errors() {
+        let result = git_status_ok(&["__nonexistent_subcommand_xyz__"]);
+        assert!(result.is_err());
+    }
+
+    // ── levenshtein_distance additional ─────────────────────────────────────
+
+    #[test]
+    fn levenshtein_distance_transposition() {
+        // "ab" → "ba" is distance 2 (not a transposition in classic Levenshtein)
+        assert_eq!(levenshtein_distance("ab", "ba"), 2);
+    }
+
+    #[test]
+    fn levenshtein_distance_long_strings() {
+        let a = "the quick brown fox";
+        let b = "the quick brown fox";
+        assert_eq!(levenshtein_distance(a, b), 0);
+    }
+
+    // ── truncate_output_for_display additional ───────────────────────────────
+
+    #[test]
+    fn truncate_output_for_display_exactly_at_line_limit() {
+        let content = "a\nb";
+        let result = truncate_output_for_display(content, 2, 1000);
+        // Exactly 2 lines, no truncation
+        assert_eq!(result, "a\nb");
+        assert!(!result.contains(DISPLAY_TRUNCATION_NOTICE));
+    }
+
+    #[test]
+    fn truncate_output_for_display_long_single_line() {
+        let content = "x".repeat(100);
+        let result = truncate_output_for_display(&content, 100, 50);
+        assert!(result.contains(DISPLAY_TRUNCATION_NOTICE));
+    }
 }
 
 /// Open a URL in the platform default browser.

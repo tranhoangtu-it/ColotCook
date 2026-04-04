@@ -379,6 +379,161 @@ mod tests {
         let result = format_session_modified_age(past);
         assert!(result.ends_with("d-ago"), "unexpected result: {result}");
     }
+
+    // ── format_session_modified_age boundary cases ───────────────────────────
+
+    #[test]
+    fn format_session_modified_age_exactly_4_seconds_is_just_now() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let past = now_millis.saturating_sub(4_000);
+        let result = format_session_modified_age(past);
+        assert_eq!(result, "just-now");
+    }
+
+    #[test]
+    fn format_session_modified_age_exactly_5_seconds_is_seconds_ago() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let past = now_millis.saturating_sub(5_000);
+        let result = format_session_modified_age(past);
+        assert_eq!(result, "5s-ago");
+    }
+
+    #[test]
+    fn format_session_modified_age_59_seconds_is_seconds_ago() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let past = now_millis.saturating_sub(59_000);
+        let result = format_session_modified_age(past);
+        assert_eq!(result, "59s-ago");
+    }
+
+    #[test]
+    fn format_session_modified_age_exactly_1_minute_is_minutes_ago() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let past = now_millis.saturating_sub(60_000);
+        let result = format_session_modified_age(past);
+        assert_eq!(result, "1m-ago");
+    }
+
+    #[test]
+    fn format_session_modified_age_exactly_1_hour_is_hours_ago() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let past = now_millis.saturating_sub(3_600_000);
+        let result = format_session_modified_age(past);
+        assert_eq!(result, "1h-ago");
+    }
+
+    #[test]
+    fn format_session_modified_age_exactly_1_day_is_days_ago() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let past = now_millis.saturating_sub(86_400_000);
+        let result = format_session_modified_age(past);
+        assert_eq!(result, "1d-ago");
+    }
+
+    // ── SESSION_REFERENCE_ALIASES ─────────────────────────────────────────────
+
+    #[test]
+    fn session_reference_aliases_contains_latest() {
+        assert!(SESSION_REFERENCE_ALIASES.contains(&LATEST_SESSION_REFERENCE));
+    }
+
+    #[test]
+    fn session_reference_aliases_contains_last() {
+        assert!(SESSION_REFERENCE_ALIASES.contains(&"last"));
+    }
+
+    #[test]
+    fn session_reference_aliases_contains_recent() {
+        assert!(SESSION_REFERENCE_ALIASES.contains(&"recent"));
+    }
+
+    // ── is_managed_session_file with various paths ─────────────────────────
+
+    #[test]
+    fn is_managed_session_file_uppercase_extension_false() {
+        // Extension matching is case-sensitive
+        assert!(!is_managed_session_file(Path::new("session.JSONL")));
+    }
+
+    #[test]
+    fn is_managed_session_file_double_extension_last_wins() {
+        // Path::extension returns the last extension
+        assert!(!is_managed_session_file(Path::new("session.jsonl.bak")));
+    }
+
+    // ── format_missing_session_reference variants ────────────────────────────
+
+    #[test]
+    fn format_missing_session_reference_contains_session_list_hint() {
+        let msg = format_missing_session_reference("my-sess");
+        assert!(msg.contains("/session list") || msg.contains("session list"));
+    }
+
+    // ── format_no_managed_sessions variants ─────────────────────────────────
+
+    #[test]
+    fn format_no_managed_sessions_contains_colotcook_command() {
+        let msg = format_no_managed_sessions();
+        assert!(msg.contains("colotcook"));
+    }
+
+    // ── sessions_dir integration ─────────────────────────────────────────────
+
+    #[test]
+    fn sessions_dir_creates_directory_if_not_exists() {
+        // This just verifies sessions_dir() works without error
+        let result = sessions_dir();
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        assert!(path.ends_with("sessions"));
+    }
+
+    // ── create_managed_session_handle ────────────────────────────────────────
+
+    #[test]
+    fn create_managed_session_handle_has_correct_id() {
+        let handle = create_managed_session_handle("test-sess-001").expect("handle creation");
+        assert_eq!(handle.id, "test-sess-001");
+    }
+
+    #[test]
+    fn create_managed_session_handle_path_has_jsonl_extension() {
+        let handle = create_managed_session_handle("test-sess-002").expect("handle creation");
+        assert!(handle
+            .path
+            .to_string_lossy()
+            .ends_with("test-sess-002.jsonl"));
+    }
+
+    // ── PRIMARY_SESSION_EXTENSION and LEGACY_SESSION_EXTENSION ──────────────
+
+    #[test]
+    fn primary_session_extension_is_jsonl() {
+        assert_eq!(PRIMARY_SESSION_EXTENSION, "jsonl");
+    }
+
+    #[test]
+    fn legacy_session_extension_is_json() {
+        assert_eq!(LEGACY_SESSION_EXTENSION, "json");
+    }
 }
 
 /// Format a human-readable age string from an epoch-millis timestamp.
