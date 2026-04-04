@@ -1768,4 +1768,215 @@ mod tests {
         // then
         assert_eq!(error.to_string(), "upstream failed");
     }
+
+    // --- RuntimeError variants and Display ---
+
+    #[test]
+    fn runtime_error_variants_display_correctly() {
+        let api_err = RuntimeError::Api {
+            message: "rate limited".to_string(),
+            retryable: true,
+        };
+        assert!(api_err.to_string().contains("API error"));
+        assert!(api_err.to_string().contains("rate limited"));
+        assert!(api_err.is_retryable());
+
+        let api_nonretryable = RuntimeError::Api {
+            message: "auth failed".to_string(),
+            retryable: false,
+        };
+        assert!(!api_nonretryable.is_retryable());
+
+        let tool_err = RuntimeError::Tool {
+            tool_name: "bash".to_string(),
+            message: "command not found".to_string(),
+        };
+        assert!(tool_err.to_string().contains("tool 'bash' failed"));
+        assert!(tool_err.to_string().contains("command not found"));
+
+        let perm_err = RuntimeError::Permission {
+            tool_name: "write_file".to_string(),
+            message: "read-only mode".to_string(),
+        };
+        assert!(perm_err.to_string().contains("permission denied"));
+        assert!(perm_err.to_string().contains("write_file"));
+
+        let session_err = RuntimeError::Session("disk full".to_string());
+        assert!(session_err.to_string().contains("session error"));
+        assert!(session_err.to_string().contains("disk full"));
+
+        let limit_err = RuntimeError::LimitExceeded("too many turns".to_string());
+        assert!(limit_err.to_string().contains("limit exceeded"));
+
+        let config_err = RuntimeError::Config("bad config".to_string());
+        assert!(config_err.to_string().contains("configuration error"));
+
+        let hook_err = RuntimeError::Hook("hook failed".to_string());
+        assert!(hook_err.to_string().contains("hook error"));
+
+        let other_err = RuntimeError::Other("misc error".to_string());
+        assert!(other_err.to_string().contains("misc error"));
+        assert!(!other_err.is_retryable());
+    }
+
+    #[test]
+    fn runtime_error_new_creates_other_variant() {
+        let err = RuntimeError::new("test message");
+        assert!(matches!(err, RuntimeError::Other(_)));
+        assert_eq!(err.to_string(), "test message");
+        assert_eq!(err.message(), "test message");
+    }
+
+    #[test]
+    fn runtime_error_is_std_error() {
+        let err: Box<dyn std::error::Error> = Box::new(RuntimeError::new("test"));
+        assert!(err.to_string().contains("test"));
+    }
+
+    // --- ToolError ---
+
+    #[test]
+    fn tool_error_new_and_display() {
+        let err = ToolError::new("tool failed with reason");
+        assert_eq!(err.to_string(), "tool failed with reason");
+    }
+
+    #[test]
+    fn tool_error_is_std_error() {
+        let err: Box<dyn std::error::Error> = Box::new(ToolError::new("tool err"));
+        assert!(err.to_string().contains("tool err"));
+    }
+
+    // --- ConversationRuntime builder pattern ---
+
+    #[test]
+    fn conversation_runtime_builder_methods_do_not_panic() {
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
+
+        struct NoopApi;
+        impl ApiClient for NoopApi {
+            fn stream(&mut self, _: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+                Ok(vec![
+                    AssistantEvent::TextDelta("hi".to_string()),
+                    AssistantEvent::MessageStop,
+                ])
+            }
+        }
+
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let _runtime = ConversationRuntime::new(
+            Session::new(),
+            NoopApi,
+            StaticToolExecutor::new(),
+            PermissionPolicy::new(PermissionMode::DangerFullAccess),
+            vec!["system".to_string()],
+        )
+        .with_max_iterations(50)
+        .with_auto_compaction_input_tokens_threshold(200_000)
+        .with_conversation_timeout(std::time::Duration::from_secs(60))
+        .with_shutdown_signal(shutdown.clone());
+
+        // Verify shutdown signal is observed
+        assert!(!shutdown.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn conversation_runtime_session_accessor() {
+        struct NoopApi;
+        impl ApiClient for NoopApi {
+            fn stream(&mut self, _: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+                Ok(vec![
+                    AssistantEvent::TextDelta("response".to_string()),
+                    AssistantEvent::MessageStop,
+                ])
+            }
+        }
+
+        let mut runtime = ConversationRuntime::new(
+            Session::new(),
+            NoopApi,
+            StaticToolExecutor::new(),
+            PermissionPolicy::new(PermissionMode::DangerFullAccess),
+            vec!["system".to_string()],
+        );
+
+        let _summary = runtime.run_turn("test", None).expect("turn should succeed");
+        let session = runtime.session();
+        assert!(!session.messages.is_empty());
+    }
+
+    // --- TurnSummary fields ---
+
+    #[test]
+    fn turn_summary_usage_accumulates_over_multiple_turns() {
+        struct CountingApi {
+            call: usize,
+        }
+        impl ApiClient for CountingApi {
+            fn stream(&mut self, _: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+                self.call += 1;
+                Ok(vec![
+                    AssistantEvent::Usage(TokenUsage {
+                        input_tokens: 10,
+                        output_tokens: 5,
+                        cache_creation_input_tokens: 0,
+                        cache_read_input_tokens: 0,
+                    }),
+                    AssistantEvent::TextDelta("ok".to_string()),
+                    AssistantEvent::MessageStop,
+                ])
+            }
+        }
+
+        let mut runtime = ConversationRuntime::new(
+            Session::new(),
+            CountingApi { call: 0 },
+            StaticToolExecutor::new(),
+            PermissionPolicy::new(PermissionMode::DangerFullAccess),
+            vec!["system".to_string()],
+        );
+
+        let s1 = runtime.run_turn("q1", None).expect("turn 1");
+        // usage reflects tokens from the current turn
+        assert!(s1.usage.output_tokens >= 5);
+
+        let s2 = runtime.run_turn("q2", None).expect("turn 2");
+        // cumulative usage grows with each turn
+        assert!(s2.usage.output_tokens >= s1.usage.output_tokens);
+    }
+
+    // --- PromptCacheEvent captured ---
+
+    #[test]
+    fn turn_summary_captures_prompt_cache_events() {
+        struct CachingApi;
+        impl ApiClient for CachingApi {
+            fn stream(&mut self, _: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+                Ok(vec![
+                    AssistantEvent::PromptCache(PromptCacheEvent {
+                        unexpected: true,
+                        reason: "cache miss".to_string(),
+                        previous_cache_read_input_tokens: 500,
+                        current_cache_read_input_tokens: 0,
+                        token_drop: 500,
+                    }),
+                    AssistantEvent::TextDelta("response".to_string()),
+                    AssistantEvent::MessageStop,
+                ])
+            }
+        }
+
+        let mut runtime = ConversationRuntime::new(
+            Session::new(),
+            CachingApi,
+            StaticToolExecutor::new(),
+            PermissionPolicy::new(PermissionMode::DangerFullAccess),
+            vec!["system".to_string()],
+        );
+
+        let summary = runtime.run_turn("test", None).expect("turn should succeed");
+        assert_eq!(summary.prompt_cache_events.len(), 1);
+        assert_eq!(summary.prompt_cache_events[0].token_drop, 500);
+    }
 }

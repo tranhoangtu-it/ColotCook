@@ -1367,4 +1367,327 @@ mod tests {
         let err = SessionError::Format("bad format".to_string());
         assert_eq!(err.to_string(), "bad format");
     }
+
+    // --- session_error is_std_error ---
+
+    #[test]
+    fn session_error_implements_std_error() {
+        use super::SessionError;
+        let err: Box<dyn std::error::Error> = Box::new(SessionError::Format("test".to_string()));
+        assert!(err.to_string().contains("test"));
+    }
+
+    // --- ConversationMessage constructors ---
+
+    #[test]
+    fn conversation_message_user_text_constructor() {
+        let msg = ConversationMessage::user_text("hello world");
+        assert_eq!(msg.role, MessageRole::User);
+        assert!(matches!(&msg.blocks[0], ContentBlock::Text { text } if text == "hello world"));
+        assert!(msg.usage.is_none());
+    }
+
+    #[test]
+    fn conversation_message_assistant_constructor() {
+        let blocks = vec![ContentBlock::Text {
+            text: "response".to_string(),
+        }];
+        let msg = ConversationMessage::assistant(blocks.clone());
+        assert_eq!(msg.role, MessageRole::Assistant);
+        assert_eq!(msg.blocks.len(), 1);
+        assert!(msg.usage.is_none());
+    }
+
+    #[test]
+    fn conversation_message_assistant_with_usage_constructor() {
+        use crate::usage::TokenUsage;
+        let usage = TokenUsage {
+            input_tokens: 10,
+            output_tokens: 5,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+        };
+        let msg = ConversationMessage::assistant_with_usage(
+            vec![ContentBlock::Text {
+                text: "reply".to_string(),
+            }],
+            Some(usage),
+        );
+        assert!(msg.usage.is_some());
+        assert_eq!(msg.usage.unwrap().input_tokens, 10);
+    }
+
+    #[test]
+    fn conversation_message_tool_result_constructor() {
+        let msg = ConversationMessage::tool_result("tool-1", "bash", "stdout output", false);
+        assert_eq!(msg.role, MessageRole::Tool);
+        assert!(matches!(
+            &msg.blocks[0],
+            ContentBlock::ToolResult { tool_use_id, output, is_error, .. }
+            if tool_use_id == "tool-1" && output == "stdout output" && !is_error
+        ));
+    }
+
+    #[test]
+    fn conversation_message_tool_result_error() {
+        let msg = ConversationMessage::tool_result("tid", "my_tool", "error msg", true);
+        assert!(matches!(
+            &msg.blocks[0],
+            ContentBlock::ToolResult { is_error: true, .. }
+        ));
+    }
+
+    // --- ConversationMessage to_json / from_json round-trip ---
+
+    #[test]
+    fn conversation_message_roundtrips_system_role() {
+        let msg = ConversationMessage {
+            role: MessageRole::System,
+            blocks: vec![ContentBlock::Text {
+                text: "system".to_string(),
+            }],
+            usage: None,
+        };
+        let json = msg.to_json();
+        let restored = ConversationMessage::from_json(&json).expect("should parse");
+        assert_eq!(restored.role, MessageRole::System);
+    }
+
+    #[test]
+    fn conversation_message_from_json_rejects_missing_role() {
+        let json = crate::json::JsonValue::parse(r#"{"blocks":[]}"#).expect("parse");
+        let err = ConversationMessage::from_json(&json).expect_err("should fail");
+        assert!(err.to_string().contains("missing role"));
+    }
+
+    #[test]
+    fn conversation_message_from_json_rejects_unknown_role() {
+        let json =
+            crate::json::JsonValue::parse(r#"{"role":"superuser","blocks":[]}"#).expect("parse");
+        let err = ConversationMessage::from_json(&json).expect_err("should fail");
+        assert!(err.to_string().contains("unsupported message role"));
+    }
+
+    #[test]
+    fn conversation_message_from_json_rejects_missing_blocks() {
+        let json = crate::json::JsonValue::parse(r#"{"role":"user"}"#).expect("parse");
+        let err = ConversationMessage::from_json(&json).expect_err("should fail");
+        assert!(err.to_string().contains("missing blocks"));
+    }
+
+    // --- ContentBlock to_json round-trip ---
+
+    #[test]
+    fn content_block_tool_use_roundtrip() {
+        let block = ContentBlock::ToolUse {
+            id: "abc".to_string(),
+            name: "bash".to_string(),
+            input: r#"{"command":"ls"}"#.to_string(),
+        };
+        let json = block.to_json();
+        let restored = ContentBlock::from_json(&json).expect("should parse");
+        assert!(matches!(restored, ContentBlock::ToolUse { name, .. } if name == "bash"));
+    }
+
+    #[test]
+    fn content_block_tool_result_roundtrip() {
+        let block = ContentBlock::ToolResult {
+            tool_use_id: "tid".to_string(),
+            tool_name: "bash".to_string(),
+            output: "ok".to_string(),
+            is_error: false,
+        };
+        let json = block.to_json();
+        let restored = ContentBlock::from_json(&json).expect("should parse");
+        assert!(matches!(
+            restored,
+            ContentBlock::ToolResult {
+                is_error: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn content_block_from_json_rejects_non_object() {
+        let json = crate::json::JsonValue::String("not an object".to_string());
+        let err = ContentBlock::from_json(&json).expect_err("should fail");
+        assert!(err.to_string().contains("block must be an object"));
+    }
+
+    #[test]
+    fn content_block_from_json_rejects_missing_type() {
+        let json = crate::json::JsonValue::parse(r#"{"text":"hello"}"#).expect("parse");
+        let err = ContentBlock::from_json(&json).expect_err("should fail");
+        assert!(err.to_string().contains("missing block type"));
+    }
+
+    // --- Session::fork without branch name ---
+
+    #[test]
+    fn fork_without_branch_name() {
+        let session = Session::new();
+        let forked = session.fork(None);
+        assert_ne!(forked.session_id, session.session_id);
+        assert!(forked.fork.is_some());
+        assert_eq!(forked.fork.unwrap().branch_name, None);
+    }
+
+    // --- Session::record_compaction increments count ---
+
+    #[test]
+    fn record_compaction_increments_count() {
+        let mut session = Session::new();
+        session.record_compaction("first compaction", 5);
+        assert_eq!(session.compaction.as_ref().unwrap().count, 1);
+        session.record_compaction("second compaction", 3);
+        assert_eq!(session.compaction.as_ref().unwrap().count, 2);
+        assert_eq!(
+            session.compaction.as_ref().unwrap().removed_message_count,
+            3
+        );
+    }
+
+    // --- Session::persistence_path ---
+
+    #[test]
+    fn persistence_path_returns_none_when_not_set() {
+        let session = Session::new();
+        assert!(session.persistence_path().is_none());
+    }
+
+    #[test]
+    fn persistence_path_returns_path_when_set() {
+        use std::path::PathBuf;
+        let session = Session::new().with_persistence_path("/tmp/my-session.jsonl");
+        assert_eq!(
+            session.persistence_path(),
+            Some(PathBuf::from("/tmp/my-session.jsonl").as_path())
+        );
+    }
+
+    // --- Session::default() ---
+
+    #[test]
+    fn session_default_equals_new() {
+        let s1 = Session::new();
+        let s2 = Session::default();
+        // Both have same structure (different session_ids)
+        assert_eq!(s1.version, s2.version);
+        assert_eq!(s1.messages.len(), s2.messages.len());
+    }
+
+    // --- Session to_json / from_json ---
+
+    #[test]
+    fn session_to_json_and_from_json_roundtrip() {
+        let mut session = Session::new();
+        session.push_user_text("test message").expect("push");
+        let json = session.to_json().expect("to_json");
+        let restored = Session::from_json(&json).expect("from_json");
+        assert_eq!(restored.session_id, session.session_id);
+        assert_eq!(restored.messages.len(), 1);
+    }
+
+    #[test]
+    fn session_from_json_rejects_non_object() {
+        let json = crate::json::JsonValue::String("not an object".to_string());
+        let err = Session::from_json(&json).expect_err("should fail");
+        assert!(err.to_string().contains("session must be an object"));
+    }
+
+    #[test]
+    fn session_from_json_rejects_missing_version() {
+        let json = crate::json::JsonValue::parse(r#"{"messages":[]}"#).expect("parse");
+        let err = Session::from_json(&json).expect_err("should fail");
+        assert!(err.to_string().contains("missing version"));
+    }
+
+    // --- SessionFork serialization ---
+
+    #[test]
+    fn session_fork_to_json_and_from_json() {
+        let fork = super::SessionFork {
+            parent_session_id: "parent-123".to_string(),
+            branch_name: Some("feature-branch".to_string()),
+        };
+        let json = fork.to_json();
+        let restored = super::SessionFork::from_json(&json).expect("should parse");
+        assert_eq!(restored.parent_session_id, "parent-123");
+        assert_eq!(restored.branch_name, Some("feature-branch".to_string()));
+    }
+
+    #[test]
+    fn session_fork_to_json_without_branch_name() {
+        let fork = super::SessionFork {
+            parent_session_id: "parent-456".to_string(),
+            branch_name: None,
+        };
+        let json = fork.to_json();
+        let restored = super::SessionFork::from_json(&json).expect("should parse");
+        assert!(restored.branch_name.is_none());
+    }
+
+    // --- JSONL with fork metadata ---
+
+    #[test]
+    fn jsonl_session_with_fork_metadata_is_parsed() {
+        let jsonl = r#"{"type":"session_meta","version":1,"session_id":"child-1","created_at_ms":1000,"updated_at_ms":1000,"fork":{"parent_session_id":"parent-1","branch_name":"investigation"}}
+{"type":"message","message":{"role":"user","blocks":[{"type":"text","text":"hello"}]}}
+"#;
+        let path = write_temp_session_file("fork-jsonl", jsonl);
+        let session = Session::load_from_path(&path).expect("session should load");
+        fs::remove_file(&path).expect("cleanup");
+        assert_eq!(session.session_id, "child-1");
+        let fork = session.fork.expect("fork metadata should be present");
+        assert_eq!(fork.parent_session_id, "parent-1");
+        assert_eq!(fork.branch_name, Some("investigation".to_string()));
+    }
+
+    // --- JSONL with compaction record ---
+
+    #[test]
+    fn jsonl_session_with_compaction_record_is_parsed() {
+        let jsonl = r#"{"type":"session_meta","version":1,"session_id":"compact-session","created_at_ms":1000,"updated_at_ms":1000}
+{"type":"compaction","count":2,"removed_message_count":10,"summary":"Summarized prior work"}
+{"type":"message","message":{"role":"user","blocks":[{"type":"text","text":"after compaction"}]}}
+"#;
+        let path = write_temp_session_file("compaction-jsonl", jsonl);
+        let session = Session::load_from_path(&path).expect("session should load");
+        fs::remove_file(&path).expect("cleanup");
+        let compaction = session.compaction.expect("compaction should be present");
+        assert_eq!(compaction.count, 2);
+        assert_eq!(compaction.removed_message_count, 10);
+        assert!(compaction.summary.contains("Summarized"));
+    }
+
+    // --- push_user_text convenience ---
+
+    #[test]
+    fn push_user_text_appends_user_message() {
+        let path = temp_session_path("push-text");
+        let mut session = Session::new().with_persistence_path(path.clone());
+        session.push_user_text("first").expect("push first");
+        session.push_user_text("second").expect("push second");
+        assert_eq!(session.messages.len(), 2);
+        let loaded = Session::load_from_path(&path).expect("load");
+        fs::remove_file(&path).expect("cleanup");
+        assert_eq!(loaded.messages.len(), 2);
+    }
+
+    // --- SessionCompaction serialization ---
+
+    #[test]
+    fn session_compaction_to_json_roundtrip() {
+        let compaction = super::SessionCompaction {
+            count: 3,
+            removed_message_count: 15,
+            summary: "Prior context summarized".to_string(),
+        };
+        let json = compaction.to_json().expect("to_json");
+        let restored = super::SessionCompaction::from_json(&json).expect("from_json");
+        assert_eq!(restored.count, 3);
+        assert_eq!(restored.removed_message_count, 15);
+        assert_eq!(restored.summary, "Prior context summarized");
+    }
 }

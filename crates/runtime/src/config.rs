@@ -1547,4 +1547,566 @@ mod tests {
         assert!(matches!(config_err, ConfigError::Io(_)));
         assert!(config_err.to_string().contains("config file missing"));
     }
+
+    // --- additional config error paths ---
+
+    #[test]
+    fn config_error_is_std_error() {
+        use super::ConfigError;
+        let err: Box<dyn std::error::Error> = Box::new(ConfigError::Parse("test".to_string()));
+        assert!(err.to_string().contains("test"));
+    }
+
+    // --- MCP server type parsing: sdk and claudeai-proxy ---
+
+    #[test]
+    fn parses_sdk_mcp_server() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        fs::write(
+            home.join("settings.json"),
+            r#"{"mcpServers":{"sdk-server":{"type":"sdk","name":"my-sdk-server"}}}"#,
+        )
+        .expect("write sdk settings");
+
+        let loaded = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect("config should load");
+        let server = loaded
+            .mcp()
+            .get("sdk-server")
+            .expect("sdk server should exist");
+        assert_eq!(server.transport(), McpTransport::Sdk);
+        match &server.config {
+            McpServerConfig::Sdk(config) => {
+                assert_eq!(config.name, "my-sdk-server");
+            }
+            other => panic!("expected sdk config, got {other:?}"),
+        }
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn parses_claudeai_proxy_mcp_server() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        fs::write(
+            home.join("settings.json"),
+            r#"{"mcpServers":{"proxy-server":{"type":"claudeai-proxy","url":"https://proxy.example.com","id":"server-123"}}}"#,
+        )
+        .expect("write proxy settings");
+
+        let loaded = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect("config should load");
+        let server = loaded
+            .mcp()
+            .get("proxy-server")
+            .expect("proxy server should exist");
+        assert_eq!(server.transport(), McpTransport::ManagedProxy);
+        match &server.config {
+            McpServerConfig::ManagedProxy(config) => {
+                assert_eq!(config.url, "https://proxy.example.com");
+                assert_eq!(config.id, "server-123");
+            }
+            other => panic!("expected managed proxy config, got {other:?}"),
+        }
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn rejects_unsupported_mcp_server_type() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        fs::write(
+            home.join("settings.json"),
+            r#"{"mcpServers":{"bad-server":{"type":"grpc","url":"http://example.com"}}}"#,
+        )
+        .expect("write bad type settings");
+
+        let error = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect_err("unsupported server type should fail");
+        assert!(error.to_string().contains("unsupported MCP server type"));
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn parses_sse_mcp_server() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        fs::write(
+            home.join("settings.json"),
+            r#"{"mcpServers":{"sse-server":{"type":"sse","url":"https://sse.example.com/events"}}}"#,
+        )
+        .expect("write sse settings");
+
+        let loaded = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect("config should load");
+        let server = loaded
+            .mcp()
+            .get("sse-server")
+            .expect("sse server should exist");
+        assert_eq!(server.transport(), McpTransport::Sse);
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    // --- permission mode parsing error paths ---
+
+    #[test]
+    fn rejects_unknown_permission_mode() {
+        let error = parse_permission_mode_label("super-power", "test").expect_err("should fail");
+        assert!(error.to_string().contains("unsupported permission mode"));
+    }
+
+    #[test]
+    fn parses_all_permission_mode_aliases() {
+        // read-only variants
+        for label in &["default", "plan", "read-only"] {
+            assert_eq!(
+                parse_permission_mode_label(label, "test").expect("should parse"),
+                ResolvedPermissionMode::ReadOnly,
+                "expected ReadOnly for '{label}'"
+            );
+        }
+        // workspace-write variants
+        for label in &["acceptEdits", "auto", "workspace-write"] {
+            assert_eq!(
+                parse_permission_mode_label(label, "test").expect("should parse"),
+                ResolvedPermissionMode::WorkspaceWrite,
+                "expected WorkspaceWrite for '{label}'"
+            );
+        }
+        // danger-full-access variants
+        for label in &["dontAsk", "danger-full-access"] {
+            assert_eq!(
+                parse_permission_mode_label(label, "test").expect("should parse"),
+                ResolvedPermissionMode::DangerFullAccess,
+                "expected DangerFullAccess for '{label}'"
+            );
+        }
+    }
+
+    // --- parse_permission_mode from config fields ---
+
+    #[test]
+    fn parses_permission_mode_from_settings_field() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        fs::write(
+            home.join("settings.json"),
+            r#"{"permissionMode":"workspace-write"}"#,
+        )
+        .expect("write settings");
+
+        let loaded = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect("config should load");
+        assert_eq!(
+            loaded.permission_mode(),
+            Some(super::ResolvedPermissionMode::WorkspaceWrite)
+        );
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn parses_permission_mode_from_permissions_default_mode() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        fs::write(
+            home.join("settings.json"),
+            r#"{"permissions":{"defaultMode":"danger-full-access"}}"#,
+        )
+        .expect("write settings");
+
+        let loaded = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect("config should load");
+        assert_eq!(
+            loaded.permission_mode(),
+            Some(super::ResolvedPermissionMode::DangerFullAccess)
+        );
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    // --- RuntimeHookConfig post_tool_use_failure accessor ---
+
+    #[test]
+    fn hook_config_post_tool_use_failure_accessor() {
+        let config = RuntimeHookConfig::new(
+            vec!["pre".to_string()],
+            vec!["post".to_string()],
+            vec!["failure-hook".to_string()],
+        );
+        assert_eq!(
+            config.post_tool_use_failure(),
+            &["failure-hook".to_string()]
+        );
+        assert_eq!(config.pre_tool_use(), &["pre".to_string()]);
+        assert_eq!(config.post_tool_use(), &["post".to_string()]);
+    }
+
+    // --- RuntimePluginConfig set_plugin_state + state_for ---
+
+    #[test]
+    fn plugin_config_set_and_get_state() {
+        let mut config = RuntimePluginConfig::default();
+        assert_eq!(config.external_directories(), &[] as &[String]);
+        assert_eq!(config.install_root(), None);
+        assert_eq!(config.registry_path(), None);
+        assert_eq!(config.bundled_root(), None);
+        config.set_plugin_state("my-plugin@builtin".to_string(), true);
+        assert!(config.state_for("my-plugin@builtin", false));
+        config.set_plugin_state("my-plugin@builtin".to_string(), false);
+        assert!(!config.state_for("my-plugin@builtin", true));
+    }
+
+    // --- RuntimeConfig empty() + accessor tests ---
+
+    #[test]
+    fn runtime_config_empty_has_defaults() {
+        use super::RuntimeConfig;
+        let config = RuntimeConfig::empty();
+        assert!(config.loaded_entries().is_empty());
+        assert!(config.merged().is_empty());
+        assert!(config.get("any-key").is_none());
+        assert!(config.oauth().is_none());
+        assert!(config.model().is_none());
+        assert!(config.permission_mode().is_none());
+        assert!(config.mcp().servers().is_empty());
+    }
+
+    #[test]
+    fn runtime_config_as_json_returns_object() {
+        use super::RuntimeConfig;
+        let config = RuntimeConfig::empty();
+        let json = config.as_json();
+        assert!(json.as_object().is_some());
+    }
+
+    // --- sandbox config parsing ---
+
+    #[test]
+    fn parses_sandbox_off_filesystem_mode() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        fs::write(
+            home.join("settings.json"),
+            r#"{"sandbox":{"enabled":false,"filesystemMode":"off"}}"#,
+        )
+        .expect("write settings");
+
+        let loaded = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect("config should load");
+        assert_eq!(loaded.sandbox().enabled, Some(false));
+        assert_eq!(
+            loaded.sandbox().filesystem_mode,
+            Some(FilesystemIsolationMode::Off)
+        );
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn parses_sandbox_workspace_only_filesystem_mode() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        fs::write(
+            home.join("settings.json"),
+            r#"{"sandbox":{"filesystemMode":"workspace-only"}}"#,
+        )
+        .expect("write settings");
+
+        let loaded = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect("config should load");
+        assert_eq!(
+            loaded.sandbox().filesystem_mode,
+            Some(FilesystemIsolationMode::WorkspaceOnly)
+        );
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn rejects_unknown_filesystem_mode() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        fs::write(
+            home.join("settings.json"),
+            r#"{"sandbox":{"filesystemMode":"supercharge"}}"#,
+        )
+        .expect("write settings");
+
+        let error = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect_err("unknown filesystem mode should fail");
+        assert!(error.to_string().contains("unsupported filesystem mode"));
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    // --- MCP OAuth config with headersHelper ---
+
+    #[test]
+    fn parses_http_mcp_server_with_headers_helper() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        fs::write(
+            home.join("settings.json"),
+            r#"{"mcpServers":{"api-server":{"type":"http","url":"https://api.example.com/mcp","headersHelper":"./get-headers.sh"}}}"#,
+        )
+        .expect("write settings");
+
+        let loaded = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect("config should load");
+        let server = loaded.mcp().get("api-server").expect("server should exist");
+        assert_eq!(server.transport(), McpTransport::Http);
+        match &server.config {
+            McpServerConfig::Http(config) => {
+                assert_eq!(config.headers_helper, Some("./get-headers.sh".to_string()));
+            }
+            other => panic!("expected http config, got {other:?}"),
+        }
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    // --- permission rules config ---
+
+    #[test]
+    fn parses_permission_rules_from_config() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        fs::write(
+            home.join("settings.json"),
+            r#"{"permissions":{"allow":["read_file","glob_search"],"deny":["bash"],"ask":["write_file"]}}"#,
+        )
+        .expect("write settings");
+
+        let loaded = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect("config should load");
+        let rules = loaded.permission_rules();
+        assert_eq!(
+            rules.allow(),
+            &["read_file".to_string(), "glob_search".to_string()]
+        );
+        assert_eq!(rules.deny(), &["bash".to_string()]);
+        assert_eq!(rules.ask(), &["write_file".to_string()]);
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    // --- RuntimePermissionRuleConfig accessor tests ---
+
+    #[test]
+    fn permission_rule_config_new_and_accessors() {
+        use super::RuntimePermissionRuleConfig;
+        let config = RuntimePermissionRuleConfig::new(
+            vec!["read".to_string()],
+            vec!["exec".to_string()],
+            vec!["write".to_string()],
+        );
+        assert_eq!(config.allow(), &["read".to_string()]);
+        assert_eq!(config.deny(), &["exec".to_string()]);
+        assert_eq!(config.ask(), &["write".to_string()]);
+    }
+
+    // --- McpConfigCollection accessors ---
+
+    #[test]
+    fn mcp_config_collection_get_returns_none_for_missing() {
+        use super::McpConfigCollection;
+        let collection = McpConfigCollection::default();
+        assert!(collection.get("nonexistent").is_none());
+        assert!(collection.servers().is_empty());
+    }
+
+    // --- RuntimeFeatureConfig accessors ---
+
+    #[test]
+    fn runtime_feature_config_accessors() {
+        use super::{OAuthConfig, RuntimeFeatureConfig};
+        let config = RuntimeFeatureConfig::default();
+        assert!(config.hooks().pre_tool_use().is_empty());
+        assert!(config.plugins().enabled_plugins().is_empty());
+        assert!(config.mcp().servers().is_empty());
+        assert!(config.oauth().is_none());
+        assert!(config.model().is_none());
+        assert!(config.permission_mode().is_none());
+        assert!(config.permission_rules().allow().is_empty());
+
+        let oauth = OAuthConfig {
+            client_id: "test".to_string(),
+            authorize_url: "https://auth.example.com".to_string(),
+            token_url: "https://token.example.com".to_string(),
+            callback_port: None,
+            manual_redirect_url: None,
+            scopes: vec![],
+        };
+        let with_model = RuntimeFeatureConfig {
+            model: Some("claude-opus-4".to_string()),
+            oauth: Some(oauth),
+            ..Default::default()
+        };
+        assert_eq!(with_model.model(), Some("claude-opus-4"));
+        assert!(with_model.oauth().is_some());
+    }
+
+    // --- CLAW_SETTINGS_SCHEMA_NAME constant ---
+
+    #[test]
+    fn claw_settings_schema_name_is_expected_value() {
+        assert_eq!(CLAW_SETTINGS_SCHEMA_NAME, "SettingsSchema");
+    }
+
+    // --- stdio MCP server with tool_call_timeout_ms ---
+
+    #[test]
+    fn parses_stdio_server_with_timeout() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        fs::write(
+            home.join("settings.json"),
+            r#"{"mcpServers":{"timed":{"command":"npx","args":["-y","@mcp/server"],"toolCallTimeoutMs":5000}}}"#,
+        )
+        .expect("write settings");
+
+        let loaded = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect("config should load");
+        let server = loaded.mcp().get("timed").expect("timed server");
+        match &server.config {
+            McpServerConfig::Stdio(config) => {
+                assert_eq!(config.tool_call_timeout_ms, Some(5000));
+                assert_eq!(config.command, "npx");
+            }
+            other => panic!("expected stdio config, got {other:?}"),
+        }
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    // --- legacy .claw.json skips parse errors ---
+
+    #[test]
+    fn ignores_legacy_claw_json_with_invalid_json() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        // Write invalid JSON to the project-level legacy .claw.json
+        fs::write(cwd.join(".claw.json"), "this is not json").expect("write invalid legacy config");
+
+        // Should silently ignore it
+        let loaded = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect("invalid legacy config should be skipped");
+        assert!(loaded.loaded_entries().is_empty());
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    // --- ConfigLoader::config_home() ---
+
+    #[test]
+    fn config_loader_config_home_accessor() {
+        use std::path::PathBuf;
+        let loader = ConfigLoader::new("/project", "/home/.claw");
+        assert_eq!(loader.config_home(), PathBuf::from("/home/.claw").as_path());
+    }
+
+    // --- deep_merge_objects replaces non-object leaf ---
+
+    #[test]
+    fn deep_merge_objects_replaces_non_object_leaf() {
+        let mut target = JsonValue::parse(r#"{"key":"old-value"}"#)
+            .expect("parse target")
+            .as_object()
+            .expect("as object")
+            .clone();
+        let source = JsonValue::parse(r#"{"key":"new-value"}"#)
+            .expect("parse source")
+            .as_object()
+            .expect("as object")
+            .clone();
+        deep_merge_objects(&mut target, &source);
+        assert_eq!(
+            target.get("key"),
+            Some(&JsonValue::String("new-value".to_string()))
+        );
+    }
+
+    // --- plugins config with enabled map under plugins.enabled ---
+
+    #[test]
+    fn parses_plugin_enabled_under_plugins_key() {
+        let root = temp_dir();
+        let cwd = root.join("project");
+        let home = root.join("home").join(".claw");
+        fs::create_dir_all(&home).expect("home config dir");
+        fs::create_dir_all(&cwd).expect("project dir");
+        fs::write(
+            home.join("settings.json"),
+            r#"{"plugins":{"enabled":{"my-plugin@builtin":true}}}"#,
+        )
+        .expect("write settings");
+
+        let loaded = ConfigLoader::new(&cwd, &home)
+            .load()
+            .expect("config should load");
+        assert_eq!(
+            loaded.plugins().enabled_plugins().get("my-plugin@builtin"),
+            Some(&true)
+        );
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
 }
