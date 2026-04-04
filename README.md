@@ -33,76 +33,26 @@ Multi-provider support (Claude, GPT, Gemini, Grok, Ollama) · 19 built-in tools 
 
 ## Demo
 
-```
-$ colotcook "explain the architecture of this project"
+<div align="center">
 
-╭──────────────────────────────────────────────────────╮
-│  ColotCook v0.1.0 · claude-opus-4-6 · workspace-write │
-╰──────────────────────────────────────────────────────╯
+![ColotCook Demo](assets/demo.gif)
 
-I'll analyze the project structure for you.
+</div>
 
-> Reading Cargo.toml...
-> Reading crates/api/src/lib.rs...
-> Reading crates/runtime/src/lib.rs...
+**Explain code, fix bugs, review PRs — all from your terminal:**
 
-This is a Rust workspace with 7 crates:
+```bash
+# Ask about your codebase
+colotcook "explain the architecture of this project"
 
-1. **colotcook-api** — Provider abstraction layer supporting Anthropic,
-   OpenAI, Gemini, xAI, and Ollama with unified streaming.
+# Fix a bug with a local model
+colotcook --model ollama:llama3 "fix the bug in src/parser.rs"
 
-2. **colotcook-cli** — Terminal UI with markdown rendering, spinners,
-   and syntax highlighting.
+# Review a PR with Gemini
+colotcook --model gemini-2.5-pro "review this PR"
 
-3. **colotcook-runtime** — Core agent loop: conversations, sessions,
-   sandbox isolation, and permission enforcement.
-
-4. **colotcook-tools** — 19 built-in tools (file ops, search, bash,
-   web fetch, MCP integration, agent orchestration).
-
-5. **colotcook-commands** — 15 slash commands for session management.
-
-6. **colotcook-plugins** — Plugin discovery, hooks, and lifecycle.
-
-7. **colotcook-telemetry** — Analytics and request tracing.
-```
-
-```
-$ colotcook --model ollama:llama3 "fix the bug in src/parser.rs"
-
-╭──────────────────────────────────────────╮
-│  ColotCook v0.1.0 · llama3 · read-only  │
-╰──────────────────────────────────────────╯
-
-> Reading src/parser.rs...
-> Found issue at line 42: off-by-one in token boundary check
-
-I found the bug. The `next_token()` function uses `<` instead of `<=`
-when checking the buffer boundary, causing it to skip the last character.
-
-> Editing src/parser.rs...
-
-Applied fix:
-```diff
--    if self.pos < self.input.len() {
-+    if self.pos <= self.input.len() {
-```
-
-> Running cargo test...
-  23 passed, 0 failed
-
-The fix is applied and all tests pass.
-```
-
-```
-$ colotcook --resume latest /status
-
-Session          ~/.colotcook/sessions/session-abc123.jsonl
-Messages         14
-Model            claude-opus-4-6
-Permission mode  workspace-write
-Token usage      12,847 input · 3,291 output
-Estimated cost   $0.42
+# Check session status
+colotcook --resume latest /status
 ```
 
 ## Features
@@ -119,30 +69,50 @@ Estimated cost   $0.42
 - **Prompt caching** — reduce API costs with intelligent prompt cache management
 - **Sandbox isolation** — Linux namespace-based sandboxing for safe code execution
 - **OAuth authentication** — secure token-based auth with auto-refresh
-- **~2000 tests** — 89.5% line coverage, 90.1% region coverage
 
 ## Architecture
 
-ColotCook is organized as a Rust workspace with 7 crates:
+<div align="center">
+
+![ColotCook Architecture](assets/architecture.png)
+
+</div>
+
+ColotCook is organized as a Rust workspace with 7 crates and 40+ modules:
 
 ```
 ColotCook/
 ├── Cargo.toml              # Workspace root
 ├── Cargo.lock              # Dependency lock file
 ├── deny.toml               # License & vulnerability auditing
-├── CONTRIBUTING.md          # Development guidelines
-├── CHANGELOG.md             # Release history
-├── SECURITY.md              # Threat model & security practices
-├── ARCHITECTURE.md          # Detailed architecture documentation
 └── crates/
-    ├── api/                # colotcook-api: Provider abstraction & streaming
-    ├── cli/                # colotcook-cli: Binary entry point & terminal UI
-    ├── commands/           # colotcook-commands: 15 slash commands
-    ├── plugins/            # colotcook-plugins: Plugin lifecycle & hooks
-    │   └── bundled/        # Built-in plugins (colotcook-guard, example-bundled, sample-hooks)
-    ├── runtime/            # colotcook-runtime: Agent loop, sessions, sandbox, permissions
-    ├── telemetry/          # colotcook-telemetry: Analytics & tracing
-    └── tools/              # colotcook-tools: 19 tool specifications
+    ├── api/                # Provider abstraction & streaming
+    │   └── providers/      # Anthropic, OpenAI, Gemini, xAI, Ollama
+    ├── cli/                # Binary entry point & terminal UI
+    │   ├── arg_parsing     # CLI argument handling
+    │   ├── streaming       # SSE response streaming
+    │   ├── live_cli        # Interactive REPL
+    │   ├── reports         # Status/cost/config formatting
+    │   └── ...8 more modules
+    ├── commands/           # 15 slash commands
+    │   ├── validation      # Input parsing & validation
+    │   ├── handlers        # Command dispatch
+    │   └── agents_skills   # Agent/skill discovery
+    ├── plugins/            # Plugin lifecycle & hooks
+    │   ├── registry        # Plugin management
+    │   ├── discovery       # Filesystem scanning
+    │   └── lifecycle       # Init/shutdown/hooks
+    ├── runtime/            # Agent loop, sessions, sandbox
+    │   ├── conversation    # Core agent loop
+    │   ├── mcp_stdio       # MCP stdio transport
+    │   ├── mcp_http        # MCP HTTP/SSE transport
+    │   └── ...12 more modules
+    ├── telemetry/          # Analytics & tracing
+    └── tools/              # 19 tool specifications
+        ├── agent_tools     # Sub-agent orchestration
+        ├── web_tools       # WebFetch, WebSearch
+        ├── file_tools      # Read, Write, Edit
+        └── ...5 more modules
 ```
 
 ## Supported Providers
@@ -193,10 +163,10 @@ colotcook --permission-mode workspace-write "refactor this module"
 # JSON output for scripting
 colotcook --output-format json "list all TODO comments"
 
-# Slash commands in a resumed session
-colotcook --resume session.jsonl /status
-colotcook --resume session.jsonl /export notes.txt
-colotcook --resume session.jsonl /config model
+# Slash commands
+colotcook --resume latest /status
+colotcook --resume latest /export notes.txt
+colotcook --resume latest /config model
 ```
 
 ### Environment Variables
@@ -229,8 +199,6 @@ ColotCook loads settings from multiple sources (highest priority first):
 Use `/config` to inspect the merged configuration.
 
 ## Built-in Tools
-
-ColotCook provides 19 tools for the AI agent:
 
 | Category | Tools |
 |----------|-------|
@@ -265,8 +233,6 @@ ColotCook provides 19 tools for the AI agent:
 
 ## Bundled Plugins
 
-ColotCook ships with built-in plugins in `crates/plugins/bundled/`:
-
 - **colotcook-guard** — Pre-execution safety checks via `pre-guard.sh` hook
 - **example-bundled** — Example plugin demonstrating pre/post hook lifecycle
 - **sample-hooks** — Sample hook implementations for reference
@@ -280,9 +246,6 @@ cargo test
 # Run tests for a specific crate
 cargo test -p colotcook-api
 cargo test -p colotcook-runtime
-
-# Check without building
-cargo check
 
 # Lint (zero warnings enforced)
 cargo clippy --workspace -- -D warnings

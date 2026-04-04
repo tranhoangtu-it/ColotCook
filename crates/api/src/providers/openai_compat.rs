@@ -1227,7 +1227,7 @@ mod tests {
 
     // --- SSE frame parsing ---
 
-    use super::{next_sse_frame, parse_sse_frame, ChatCompletionChunk};
+    use super::{next_sse_frame, parse_sse_frame};
 
     #[test]
     fn next_sse_frame_lf_separator() {

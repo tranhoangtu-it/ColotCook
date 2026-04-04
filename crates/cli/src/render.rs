@@ -913,7 +913,7 @@ mod tests {
         let renderer = TerminalRenderer::new();
         let mut state = MarkdownStreamState::default();
         assert!(state.push(&renderer, "text without blank line").is_none());
-        state.flush(&renderer);
+        let _ = state.flush(&renderer);
         // After flush, pending should be empty — second flush returns None
         assert!(state.flush(&renderer).is_none());
     }
