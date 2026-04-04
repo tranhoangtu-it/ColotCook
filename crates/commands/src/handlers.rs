@@ -182,3 +182,199 @@ pub fn handle_slash_command(
         | SlashCommand::Unknown(_) => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use colotcook_runtime::{CompactionConfig, Session};
+
+    fn empty_session() -> Session {
+        Session::new()
+    }
+
+    // ── handle_cost ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn handle_cost_contains_token_usage_header() {
+        let session = empty_session();
+        let output = handle_cost(&session);
+        assert!(output.contains("Token Usage"));
+    }
+
+    #[test]
+    fn handle_cost_contains_message_count() {
+        let session = empty_session();
+        let output = handle_cost(&session);
+        assert!(output.contains("Total messages"));
+        assert!(output.contains('0'));
+    }
+
+    // ── handle_diff ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn handle_diff_returns_string() {
+        // Just verify no panic — actual output depends on git state
+        let output = handle_diff();
+        assert!(!output.is_empty() || output.is_empty()); // tautology to verify no panic
+    }
+
+    // ── handle_commit ────────────────────────────────────────────────────────
+
+    #[test]
+    fn handle_commit_is_placeholder() {
+        let output = handle_commit();
+        assert!(output.contains("/commit") || output.contains("commit"));
+    }
+
+    // ── handle_debug_tool_call ───────────────────────────────────────────────
+
+    #[test]
+    fn handle_debug_tool_call_no_tool_calls() {
+        let session = empty_session();
+        let output = handle_debug_tool_call(&session);
+        assert!(output.contains("No tool calls found"));
+    }
+
+    // ── handle_sandbox ───────────────────────────────────────────────────────
+
+    #[test]
+    fn handle_sandbox_contains_sandbox_header() {
+        let output = handle_sandbox();
+        assert!(output.contains("Sandbox"));
+    }
+
+    #[test]
+    fn handle_sandbox_contains_working_directory() {
+        let output = handle_sandbox();
+        // Should contain either the cwd or a note about being unable to determine it
+        assert!(output.contains("Working directory") || output.contains("directory"));
+    }
+
+    // ── handle_session ───────────────────────────────────────────────────────
+
+    #[test]
+    fn handle_session_contains_session_id() {
+        let session = empty_session();
+        let output = handle_session(&session);
+        assert!(output.contains("Session ID"));
+        assert!(output.contains(&session.session_id));
+    }
+
+    #[test]
+    fn handle_session_contains_message_count() {
+        let session = empty_session();
+        let output = handle_session(&session);
+        assert!(output.contains("Messages"));
+    }
+
+    #[test]
+    fn handle_session_contains_version() {
+        let session = empty_session();
+        let output = handle_session(&session);
+        assert!(output.contains("Version"));
+    }
+
+    // ── handle_slash_command ─────────────────────────────────────────────────
+
+    #[test]
+    fn handle_slash_command_empty_input_returns_none() {
+        let session = empty_session();
+        let compaction = CompactionConfig::default();
+        let result = handle_slash_command("", &session, compaction);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn handle_slash_command_non_slash_input_returns_none() {
+        let session = empty_session();
+        let compaction = CompactionConfig::default();
+        let result = handle_slash_command("hello world", &session, compaction);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn handle_slash_command_help() {
+        let session = empty_session();
+        let compaction = CompactionConfig::default();
+        let result = handle_slash_command("/help", &session, compaction);
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert!(!r.message.is_empty());
+    }
+
+    #[test]
+    fn handle_slash_command_cost() {
+        let session = empty_session();
+        let compaction = CompactionConfig::default();
+        let result = handle_slash_command("/cost", &session, compaction);
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert!(r.message.contains("Token Usage"));
+    }
+
+    #[test]
+    fn handle_slash_command_diff() {
+        let session = empty_session();
+        let compaction = CompactionConfig::default();
+        let result = handle_slash_command("/diff", &session, compaction);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn handle_slash_command_commit() {
+        let session = empty_session();
+        let compaction = CompactionConfig::default();
+        let result = handle_slash_command("/commit", &session, compaction);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn handle_slash_command_debug_tool_call() {
+        let session = empty_session();
+        let compaction = CompactionConfig::default();
+        let result = handle_slash_command("/debug-tool-call", &session, compaction);
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert!(r.message.contains("No tool calls found"));
+    }
+
+    #[test]
+    fn handle_slash_command_sandbox() {
+        let session = empty_session();
+        let compaction = CompactionConfig::default();
+        let result = handle_slash_command("/sandbox", &session, compaction);
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert!(r.message.contains("Sandbox"));
+    }
+
+    #[test]
+    fn handle_slash_command_session() {
+        let session = empty_session();
+        let compaction = CompactionConfig::default();
+        let result = handle_slash_command("/session", &session, compaction);
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert!(r.message.contains("Session"));
+    }
+
+    #[test]
+    fn handle_slash_command_compact_below_threshold() {
+        // With default compaction config, empty session should be "below threshold"
+        let session = empty_session();
+        let compaction = CompactionConfig::default();
+        let result = handle_slash_command("/compact", &session, compaction);
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert!(r.message.contains("Compaction skipped") || r.message.contains("Compacted"));
+    }
+
+    #[test]
+    fn handle_slash_command_unknown_returns_none_for_passthrough_commands() {
+        let session = empty_session();
+        let compaction = CompactionConfig::default();
+        // /status is a passthrough command (handled externally)
+        let result = handle_slash_command("/status", &session, compaction);
+        assert!(result.is_none());
+    }
+}

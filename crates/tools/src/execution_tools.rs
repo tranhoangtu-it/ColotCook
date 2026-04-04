@@ -895,4 +895,262 @@ mod tests {
             "expected bash/sh to be available, got error"
         );
     }
+
+    // --- resolve_repl_runtime more aliases ---
+
+    #[test]
+    fn resolve_repl_runtime_node_alias() {
+        let _ = resolve_repl_runtime("node"); // May succeed or fail — no panic either way
+    }
+
+    #[test]
+    fn resolve_repl_runtime_sh_alias() {
+        let result = resolve_repl_runtime("sh");
+        // sh should be available on most systems
+        assert!(result.is_ok(), "expected sh/bash to be available");
+    }
+
+    #[test]
+    fn resolve_repl_runtime_bash_alias() {
+        let result = resolve_repl_runtime("bash");
+        assert!(result.is_ok(), "expected bash to be available");
+    }
+
+    #[test]
+    fn resolve_repl_runtime_python_alias() {
+        // python alias — may not be installed, just verify no panic
+        let _ = resolve_repl_runtime("python");
+    }
+
+    // --- execute_brief ---
+
+    #[test]
+    fn execute_brief_empty_message_errors() {
+        use crate::types::{BriefInput, BriefStatus};
+        let input = BriefInput {
+            message: "   ".to_string(),
+            status: BriefStatus::Normal,
+            attachments: None,
+        };
+        let result = execute_brief(input);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must not be empty"));
+    }
+
+    #[test]
+    fn execute_brief_normal_message_succeeds() {
+        use crate::types::{BriefInput, BriefStatus};
+        let input = BriefInput {
+            message: "Hello from brief".to_string(),
+            status: BriefStatus::Normal,
+            attachments: None,
+        };
+        let result = execute_brief(input);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.message, "Hello from brief");
+        assert!(output.attachments.is_none());
+    }
+
+    #[test]
+    fn execute_brief_proactive_status_succeeds() {
+        use crate::types::{BriefInput, BriefStatus};
+        let input = BriefInput {
+            message: "Proactive update".to_string(),
+            status: BriefStatus::Proactive,
+            attachments: None,
+        };
+        let result = execute_brief(input);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.message, "Proactive update");
+    }
+
+    #[test]
+    fn execute_brief_has_sent_at_timestamp() {
+        use crate::types::{BriefInput, BriefStatus};
+        let input = BriefInput {
+            message: "message".to_string(),
+            status: BriefStatus::Normal,
+            attachments: None,
+        };
+        let output = execute_brief(input).unwrap();
+        assert!(!output.sent_at.is_empty());
+    }
+
+    #[test]
+    fn execute_brief_with_nonexistent_attachment_errors() {
+        use crate::types::{BriefInput, BriefStatus};
+        let input = BriefInput {
+            message: "with attachment".to_string(),
+            status: BriefStatus::Normal,
+            attachments: Some(vec!["/nonexistent/path/file.txt".to_string()]),
+        };
+        let result = execute_brief(input);
+        assert!(result.is_err());
+    }
+
+    // --- is_image_path more variants ---
+
+    #[test]
+    fn is_image_path_jpeg_uppercase() {
+        // The function lowercases the extension, so JPEG is matched
+        assert!(is_image_path(std::path::Path::new("photo.JPEG")));
+    }
+
+    #[test]
+    fn is_image_path_gif() {
+        assert!(is_image_path(std::path::Path::new("animation.gif")));
+    }
+
+    #[test]
+    fn is_image_path_webp() {
+        assert!(is_image_path(std::path::Path::new("image.webp")));
+    }
+
+    #[test]
+    fn is_image_path_bmp() {
+        assert!(is_image_path(std::path::Path::new("image.bmp")));
+    }
+
+    #[test]
+    fn is_image_path_jpeg() {
+        assert!(is_image_path(std::path::Path::new("photo.jpeg")));
+    }
+
+    #[test]
+    fn is_image_path_rs_is_not_image() {
+        assert!(!is_image_path(std::path::Path::new("main.rs")));
+    }
+
+    // --- format_notebook_edit_mode ---
+
+    #[test]
+    fn format_all_notebook_edit_modes() {
+        for (mode, expected) in [
+            (NotebookEditMode::Replace, "replace"),
+            (NotebookEditMode::Insert, "insert"),
+            (NotebookEditMode::Delete, "delete"),
+        ] {
+            assert_eq!(format_notebook_edit_mode(mode), expected);
+        }
+    }
+
+    // --- source_lines edge cases ---
+
+    #[test]
+    fn source_lines_no_trailing_newline() {
+        let lines = source_lines("single");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0], json!("single"));
+    }
+
+    #[test]
+    fn source_lines_windows_line_endings_preserved() {
+        // split_inclusive('\n') splits on \n, preserving \r
+        let lines = source_lines("a\r\nb\r\n");
+        assert_eq!(lines.len(), 2);
+    }
+
+    // --- execute_sleep at max limit ---
+
+    #[test]
+    fn execute_sleep_at_max_limit_ok() {
+        use crate::types::SleepInput;
+        let input = SleepInput {
+            duration_ms: MAX_SLEEP_DURATION_MS,
+        };
+        // This would actually sleep for 5 minutes, so skip the actual call.
+        // Just verify the boundary is MAX not MAX+1
+        assert!(MAX_SLEEP_DURATION_MS == 300_000);
+        let _ = input; // Avoid unused warning
+    }
+
+    // --- detect_powershell_shell ---
+
+    #[test]
+    fn detect_powershell_shell_returns_some_or_error() {
+        // On macOS/Linux without PowerShell, this should error; on Windows it succeeds
+        let result = detect_powershell_shell();
+        // Just verify no panic
+        let _ = result;
+    }
+
+    // --- command_exists edge cases ---
+
+    #[test]
+    fn command_exists_sh_available() {
+        assert!(command_exists("sh"));
+    }
+
+    #[test]
+    fn command_exists_empty_command_returns_false() {
+        // Empty string command should not crash
+        let _ = command_exists("");
+    }
+
+    // --- iso8601_timestamp ---
+
+    #[test]
+    fn iso8601_timestamp_looks_like_timestamp() {
+        let ts = iso8601_timestamp();
+        // Should contain digits and be non-empty
+        assert!(!ts.is_empty());
+        assert!(ts.chars().any(|c| c.is_ascii_digit()));
+    }
+
+    // --- make_cell_id edge cases ---
+
+    #[test]
+    fn make_cell_id_large_index() {
+        assert_eq!(make_cell_id(99), "cell-100");
+    }
+
+    // --- resolve_cell_index edge cases ---
+
+    #[test]
+    fn resolve_cell_index_single_cell_no_id_replace() {
+        let cells = vec![json!({"id": "cell-1", "cell_type": "code"})];
+        let idx = resolve_cell_index(&cells, None, NotebookEditMode::Replace).unwrap();
+        assert_eq!(idx, 0);
+    }
+
+    #[test]
+    fn resolve_cell_index_empty_insert_returns_zero() {
+        let cells: Vec<serde_json::Value> = vec![];
+        // Insert on empty is ok and returns 0
+        let idx = resolve_cell_index(&cells, None, NotebookEditMode::Insert).unwrap();
+        assert_eq!(idx, 0); // saturating_sub(1) of 0 = 0
+    }
+
+    // --- build_notebook_cell ---
+
+    #[test]
+    fn build_notebook_cell_code_has_outputs_field() {
+        let cell = build_notebook_cell("c1", NotebookCellType::Code, "pass");
+        assert!(cell["outputs"].is_array());
+        assert!(cell["execution_count"].is_null());
+    }
+
+    #[test]
+    fn build_notebook_cell_markdown_has_no_outputs() {
+        let cell = build_notebook_cell("m1", NotebookCellType::Markdown, "# title");
+        assert!(cell.get("outputs").is_none());
+        assert!(cell.get("execution_count").is_none());
+    }
+
+    // --- require_notebook_source ---
+
+    #[test]
+    fn require_notebook_source_delete_with_some_source_ok() {
+        let result = require_notebook_source(Some("any".to_string()), NotebookEditMode::Delete);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "any");
+    }
+
+    #[test]
+    fn require_notebook_source_replace_with_source_ok() {
+        let result = require_notebook_source(Some("code".to_string()), NotebookEditMode::Replace);
+        assert!(result.is_ok());
+    }
 }

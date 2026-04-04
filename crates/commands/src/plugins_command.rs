@@ -432,4 +432,155 @@ mod tests {
             Some("legacy /commands")
         );
     }
+
+    // ── DefinitionSource ordering ────────────────────────────────────────────
+
+    #[test]
+    fn definition_source_ordering() {
+        // ProjectCodex < ProjectClaude < UserCodexHome < UserCodex < UserClaude
+        assert!(DefinitionSource::ProjectCodex < DefinitionSource::ProjectClaude);
+        assert!(DefinitionSource::ProjectClaude < DefinitionSource::UserCodexHome);
+        assert!(DefinitionSource::UserCodexHome < DefinitionSource::UserCodex);
+        assert!(DefinitionSource::UserCodex < DefinitionSource::UserClaude);
+    }
+
+    #[test]
+    fn definition_source_label_project_claude() {
+        assert_eq!(DefinitionSource::ProjectClaude.label(), "Project (.claude)");
+    }
+
+    #[test]
+    fn definition_source_label_user_codex() {
+        assert_eq!(DefinitionSource::UserCodex.label(), "User (~/.codex)");
+    }
+
+    // ── render_plugins_report ────────────────────────────────────────────────
+
+    #[test]
+    fn render_plugins_report_starts_with_plugins_header() {
+        let result = render_plugins_report(&[]);
+        assert!(result.starts_with("Plugins"));
+    }
+
+    #[test]
+    fn render_plugins_report_multiple_enabled_and_disabled() {
+        let plugins = vec![
+            make_plugin_summary("id-a", "Plugin A", "1.0", true),
+            make_plugin_summary("id-b", "Plugin B", "1.1", false),
+            make_plugin_summary("id-c", "Plugin C", "2.0", true),
+        ];
+        let result = render_plugins_report(&plugins);
+        assert!(result.contains("enabled"));
+        assert!(result.contains("disabled"));
+        assert!(result.contains("Plugin C"));
+    }
+
+    // ── render_plugin_install_report ─────────────────────────────────────────
+
+    #[test]
+    fn render_plugin_install_report_disabled_plugin() {
+        let plugin = make_plugin_summary("my-id", "My Plugin", "1.0.0", false);
+        let result = render_plugin_install_report("my-id", Some(&plugin));
+        assert!(result.contains("disabled"));
+    }
+
+    #[test]
+    fn render_plugin_install_report_starts_with_plugins_header() {
+        let result = render_plugin_install_report("test-id", None);
+        assert!(result.starts_with("Plugins"));
+    }
+
+    // ── handle_agents_slash_command ──────────────────────────────────────────
+
+    #[test]
+    fn handle_agents_slash_command_list_returns_report() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let result = handle_agents_slash_command(None, &cwd);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn handle_agents_slash_command_list_explicit() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let result = handle_agents_slash_command(Some("list"), &cwd);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn handle_agents_slash_command_help() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let result = handle_agents_slash_command(Some("--help"), &cwd);
+        assert!(result.is_ok());
+        let msg = result.unwrap();
+        assert!(!msg.is_empty());
+    }
+
+    #[test]
+    fn handle_agents_slash_command_long_help() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let result = handle_agents_slash_command(Some("help"), &cwd);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn handle_agents_slash_command_short_help() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let result = handle_agents_slash_command(Some("-h"), &cwd);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn handle_agents_slash_command_unknown_args() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let result = handle_agents_slash_command(Some("unknown-action"), &cwd);
+        assert!(result.is_ok()); // Returns usage help for unknown args
+    }
+
+    // ── handle_skills_slash_command ──────────────────────────────────────────
+
+    #[test]
+    fn handle_skills_slash_command_list_returns_report() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let result = handle_skills_slash_command(None, &cwd);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn handle_skills_slash_command_list_explicit() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let result = handle_skills_slash_command(Some("list"), &cwd);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn handle_skills_slash_command_install_no_target() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let result = handle_skills_slash_command(Some("install"), &cwd);
+        assert!(result.is_ok());
+        // Should return usage help
+        let msg = result.unwrap();
+        assert!(!msg.is_empty());
+    }
+
+    #[test]
+    fn handle_skills_slash_command_install_empty_target() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let result = handle_skills_slash_command(Some("install "), &cwd);
+        assert!(result.is_ok());
+        // Empty target after "install " returns usage
+    }
+
+    #[test]
+    fn handle_skills_slash_command_help() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let result = handle_skills_slash_command(Some("--help"), &cwd);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn handle_skills_slash_command_unknown_args() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let result = handle_skills_slash_command(Some("unknown-action-xyz"), &cwd);
+        assert!(result.is_ok());
+    }
 }

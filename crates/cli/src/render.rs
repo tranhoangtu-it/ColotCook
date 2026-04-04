@@ -793,4 +793,267 @@ mod tests {
         let output = String::from_utf8_lossy(&out);
         assert!(output.contains("Working"));
     }
+
+    // ── Spinner::finish and Spinner::fail ────────────────────────────────────
+
+    #[test]
+    fn spinner_finish_writes_check_mark() {
+        let renderer = TerminalRenderer::new();
+        let mut spinner = Spinner::new();
+        let mut out = Vec::new();
+        spinner
+            .finish("Done", renderer.color_theme(), &mut out)
+            .expect("finish succeeds");
+        let output = String::from_utf8_lossy(&out);
+        assert!(output.contains("Done"));
+        assert!(output.contains('✔'));
+    }
+
+    #[test]
+    fn spinner_fail_writes_x_mark() {
+        let renderer = TerminalRenderer::new();
+        let mut spinner = Spinner::new();
+        let mut out = Vec::new();
+        spinner
+            .fail("Error", renderer.color_theme(), &mut out)
+            .expect("fail succeeds");
+        let output = String::from_utf8_lossy(&out);
+        assert!(output.contains("Error"));
+        assert!(output.contains('✘'));
+    }
+
+    #[test]
+    fn spinner_finish_resets_frame_index() {
+        let renderer = TerminalRenderer::new();
+        let mut spinner = Spinner::new();
+        let mut out = Vec::new();
+        // Advance frames
+        for _ in 0..5 {
+            spinner.tick("label", renderer.color_theme(), &mut out).ok();
+        }
+        assert!(spinner.frame_index > 0);
+        spinner
+            .finish("Done", renderer.color_theme(), &mut out)
+            .ok();
+        assert_eq!(spinner.frame_index, 0);
+    }
+
+    #[test]
+    fn spinner_fail_resets_frame_index() {
+        let renderer = TerminalRenderer::new();
+        let mut spinner = Spinner::new();
+        let mut out = Vec::new();
+        for _ in 0..3 {
+            spinner.tick("label", renderer.color_theme(), &mut out).ok();
+        }
+        spinner.fail("Oops", renderer.color_theme(), &mut out).ok();
+        assert_eq!(spinner.frame_index, 0);
+    }
+
+    // ── strip_ansi ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn strip_ansi_removes_escape_sequences() {
+        let colored = "\x1b[1;32mhello\x1b[0m world";
+        assert_eq!(strip_ansi(colored), "hello world");
+    }
+
+    #[test]
+    fn strip_ansi_passthrough_plain_text() {
+        let plain = "just text";
+        assert_eq!(strip_ansi(plain), "just text");
+    }
+
+    #[test]
+    fn strip_ansi_empty_string() {
+        assert_eq!(strip_ansi(""), "");
+    }
+
+    #[test]
+    fn strip_ansi_lone_escape_not_bracket() {
+        // ESC not followed by '[' should pass through as-is
+        let s = "\x1bX plain";
+        let result = strip_ansi(s);
+        assert!(result.contains("X plain") || result.contains("\x1b"));
+    }
+
+    // ── MarkdownStreamState::flush ────────────────────────────────────────────
+
+    #[test]
+    fn markdown_stream_flush_empty_pending_returns_none() {
+        let renderer = TerminalRenderer::new();
+        let mut state = MarkdownStreamState::default();
+        assert!(state.flush(&renderer).is_none());
+    }
+
+    #[test]
+    fn markdown_stream_flush_whitespace_only_returns_none() {
+        let renderer = TerminalRenderer::new();
+        let mut state = MarkdownStreamState::default();
+        // Push only whitespace — the boundary finder may or may not find a split
+        // (a newline counts as a boundary). Either way, flush on empty pending = None.
+        let _ = state.push(&renderer, "   \n  ");
+        // After flush, whatever was pending is cleared; a second flush = None
+        let _ = state.flush(&renderer);
+        assert!(state.flush(&renderer).is_none());
+    }
+
+    #[test]
+    fn markdown_stream_flush_non_empty_pending_returns_rendered() {
+        let renderer = TerminalRenderer::new();
+        let mut state = MarkdownStreamState::default();
+        // Push without completing a block (no blank line)
+        assert!(state.push(&renderer, "some incomplete text").is_none());
+        let flushed = state.flush(&renderer).expect("flush should return Some");
+        assert!(strip_ansi(&flushed).contains("some incomplete text"));
+    }
+
+    #[test]
+    fn markdown_stream_flush_clears_pending() {
+        let renderer = TerminalRenderer::new();
+        let mut state = MarkdownStreamState::default();
+        assert!(state.push(&renderer, "text without blank line").is_none());
+        state.flush(&renderer);
+        // After flush, pending should be empty — second flush returns None
+        assert!(state.flush(&renderer).is_none());
+    }
+
+    // ── stream_markdown ───────────────────────────────────────────────────────
+
+    #[test]
+    fn stream_markdown_writes_rendered_output() {
+        let renderer = TerminalRenderer::new();
+        let mut out = Vec::new();
+        renderer
+            .stream_markdown("**bold**", &mut out)
+            .expect("stream_markdown should succeed");
+        let output = String::from_utf8_lossy(&out);
+        assert!(output.contains("bold"));
+    }
+
+    #[test]
+    fn stream_markdown_ends_with_newline() {
+        let renderer = TerminalRenderer::new();
+        let mut out = Vec::new();
+        renderer
+            .stream_markdown("hello", &mut out)
+            .expect("stream_markdown should succeed");
+        let output = String::from_utf8_lossy(&out);
+        assert!(output.ends_with('\n'));
+    }
+
+    // ── render_markdown edge cases ────────────────────────────────────────────
+
+    #[test]
+    fn render_markdown_empty_string() {
+        let renderer = TerminalRenderer::new();
+        let output = renderer.render_markdown("");
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn render_markdown_blockquote() {
+        let renderer = TerminalRenderer::new();
+        let output = renderer.render_markdown("> quoted text");
+        let plain = strip_ansi(&output);
+        assert!(plain.contains("quoted text"));
+    }
+
+    #[test]
+    fn render_markdown_horizontal_rule() {
+        let renderer = TerminalRenderer::new();
+        let output = renderer.render_markdown("---");
+        assert!(output.contains("---"));
+    }
+
+    #[test]
+    fn render_markdown_inline_code() {
+        let renderer = TerminalRenderer::new();
+        let output = renderer.render_markdown("Use `println!()` here.");
+        let plain = strip_ansi(&output);
+        assert!(plain.contains("`println!()`"));
+    }
+
+    #[test]
+    fn render_markdown_task_list() {
+        let renderer = TerminalRenderer::new();
+        let output = renderer.render_markdown("- [ ] todo\n- [x] done");
+        let plain = strip_ansi(&output);
+        assert!(plain.contains("[ ]") || plain.contains("todo"));
+        assert!(plain.contains("[x]") || plain.contains("done"));
+    }
+
+    #[test]
+    fn render_markdown_indented_code_block() {
+        let renderer = TerminalRenderer::new();
+        let output = renderer.render_markdown("    indented code");
+        // Indented code blocks are rendered (as code blocks with language "text")
+        let plain = strip_ansi(&output);
+        assert!(plain.contains("indented code"));
+    }
+
+    #[test]
+    fn render_markdown_image_tag() {
+        let renderer = TerminalRenderer::new();
+        let output = renderer.render_markdown("![alt](https://example.com/img.png)");
+        let plain = strip_ansi(&output);
+        // Images are rendered as [image:url] placeholder
+        assert!(plain.contains("image:") || plain.contains("example.com"));
+    }
+
+    #[test]
+    fn render_markdown_html_inline() {
+        let renderer = TerminalRenderer::new();
+        let output = renderer.render_markdown("<em>hello</em>");
+        // HTML passthrough
+        assert!(output.contains("hello") || output.contains("<em>"));
+    }
+
+    #[test]
+    fn render_markdown_strong_and_emphasis_combined() {
+        let renderer = TerminalRenderer::new();
+        let output = renderer.render_markdown("***bold italic***");
+        let plain = strip_ansi(&output);
+        assert!(plain.contains("bold italic"));
+        assert!(output.contains('\u{1b}')); // Has ANSI codes
+    }
+
+    #[test]
+    fn render_markdown_heading_levels() {
+        let renderer = TerminalRenderer::new();
+        // Test h1 through h4 (different colors)
+        for level in 1..=4 {
+            let md = format!("{} Heading Level {level}", "#".repeat(level));
+            let output = renderer.render_markdown(&md);
+            let plain = strip_ansi(&output);
+            assert!(plain.contains(&format!("Heading Level {level}")));
+        }
+    }
+
+    #[test]
+    fn render_markdown_link_with_empty_text_uses_url() {
+        let renderer = TerminalRenderer::new();
+        // Link with empty label — should use URL as the text
+        let output = renderer.render_markdown("[](https://example.com)");
+        let plain = strip_ansi(&output);
+        assert!(plain.contains("https://example.com"));
+    }
+
+    #[test]
+    fn highlight_code_unknown_language_falls_back_to_plain() {
+        let renderer = TerminalRenderer::new();
+        let output = renderer.highlight_code("x = 1", "unknownlang999");
+        // Should still produce output without panicking
+        assert!(output.contains("x = 1") || !output.is_empty());
+    }
+
+    #[test]
+    fn render_markdown_table_empty_cells() {
+        let renderer = TerminalRenderer::new();
+        // Table with only header, no data rows
+        let output = renderer.render_markdown("| A | B |\n|---|---|");
+        let plain = strip_ansi(&output);
+        // Should at minimum render the header
+        assert!(plain.contains('A') || plain.contains('B') || plain.contains('│'));
+    }
 }

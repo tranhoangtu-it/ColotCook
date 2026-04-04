@@ -534,6 +534,147 @@ mod tests {
     fn legacy_session_extension_is_json() {
         assert_eq!(LEGACY_SESSION_EXTENSION, "json");
     }
+
+    // ── list_managed_sessions and render_session_list ──────────────────────
+
+    #[test]
+    fn list_managed_sessions_returns_ok() {
+        // Just verify calling it doesn't panic — contents depend on CWD
+        let result = list_managed_sessions();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn render_session_list_returns_ok() {
+        let result = render_session_list("nonexistent-id");
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.contains("Sessions"));
+    }
+
+    #[test]
+    fn render_session_list_contains_directory_path() {
+        let result = render_session_list("any-id").expect("render should succeed");
+        assert!(result.contains("Directory"));
+    }
+
+    #[test]
+    fn render_session_list_empty_state_message() {
+        // After sessions_dir is created, list may be empty (new temp workspace)
+        // Just verify it renders without panic
+        let result = render_session_list("test-id");
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Either "No managed sessions" or session list
+        assert!(output.contains("Sessions"));
+    }
+
+    // ── format_session_modified_age more boundaries ───────────────────────
+
+    #[test]
+    fn format_session_modified_age_very_old_is_days() {
+        // 365 days ago
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let past = now_millis.saturating_sub(365 * 86_400 * 1_000);
+        let result = format_session_modified_age(past);
+        assert!(result.ends_with("d-ago"), "expected d-ago, got: {result}");
+    }
+
+    #[test]
+    fn format_session_modified_age_zero_millis() {
+        // Epoch 0 = very far in the past = many days
+        let result = format_session_modified_age(0);
+        assert!(result.ends_with("d-ago") || result == "just-now");
+    }
+
+    #[test]
+    fn format_session_modified_age_exact_one_minute_boundary() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let exactly_one_minute = now_millis.saturating_sub(60_000);
+        let result = format_session_modified_age(exactly_one_minute);
+        assert_eq!(result, "1m-ago");
+    }
+
+    #[test]
+    fn format_session_modified_age_59_minutes_is_minutes() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let past = now_millis.saturating_sub(59 * 60 * 1_000);
+        let result = format_session_modified_age(past);
+        assert!(result.ends_with("m-ago"), "expected m-ago, got: {result}");
+    }
+
+    // ── is_managed_session_file edge cases ────────────────────────────────
+
+    #[test]
+    fn is_managed_session_file_empty_filename() {
+        assert!(!is_managed_session_file(Path::new("")));
+    }
+
+    #[test]
+    fn is_managed_session_file_json_in_deep_path() {
+        assert!(is_managed_session_file(Path::new(
+            "/very/deep/path/to/session.json"
+        )));
+    }
+
+    // ── resolve_session_reference passthrough ────────────────────────────
+
+    #[test]
+    fn resolve_session_reference_case_insensitive_aliases() {
+        // "LATEST" and "Last" etc. should all be treated as aliases
+        // (may fail if no sessions exist, but should not panic with wrong error type)
+        for alias in &["LATEST", "LAST", "RECENT", "Latest"] {
+            let result = resolve_session_reference(alias);
+            // If no sessions exist, we get a "no managed sessions" error — that's expected
+            if let Err(e) = result {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("no managed sessions") || msg.contains("sessions"),
+                    "unexpected error for alias {alias}: {msg}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_session_reference_nonexistent_path_errors() {
+        // A path-like reference that doesn't exist should fail with "session not found"
+        let result = resolve_session_reference("nonexistent.jsonl");
+        assert!(result.is_err());
+        // Map error to string without requiring Debug on the Ok type
+        let msg = result.err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(
+            msg.contains("session not found")
+                || msg.contains("nonexistent")
+                || msg.contains("not found"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    // ── SESSION_REFERENCE_ALIASES count ──────────────────────────────────
+
+    #[test]
+    fn session_reference_aliases_has_three_entries() {
+        assert_eq!(SESSION_REFERENCE_ALIASES.len(), 3);
+    }
+
+    // ── create_managed_session_handle edge cases ─────────────────────────
+
+    #[test]
+    fn create_managed_session_handle_path_is_in_sessions_dir() {
+        let handle = create_managed_session_handle("edge-case-001").expect("handle creation");
+        let path_str = handle.path.to_string_lossy();
+        assert!(path_str.contains("sessions"));
+    }
 }
 
 /// Format a human-readable age string from an epoch-millis timestamp.
