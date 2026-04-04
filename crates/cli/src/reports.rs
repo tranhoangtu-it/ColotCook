@@ -14,7 +14,7 @@ use colotcook_runtime as runtime;
 use crate::init::initialize_repo;
 use crate::session_management::{LATEST_SESSION_REFERENCE, PRIMARY_SESSION_EXTENSION};
 use crate::util::{indent_block, truncate_for_prompt};
-use crate::{DEFAULT_DATE, VERSION, BUILD_TARGET, GIT_SHA};
+use crate::arg_parsing::{DEFAULT_DATE, VERSION, BUILD_TARGET, GIT_SHA};
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -241,7 +241,7 @@ pub(crate) fn status_context(
 /// Test-only helper for formatting unknown slash command messages.
 #[cfg(test)]
 pub(crate) fn format_unknown_slash_command_message(name: &str) -> String {
-    let suggestions = crate::suggest_slash_commands(name);
+    let suggestions = crate::arg_parsing::suggest_slash_commands(name);
     if suggestions.is_empty() {
         format!("unknown slash command: /{name}. Use /help to list available commands.")
     } else {
