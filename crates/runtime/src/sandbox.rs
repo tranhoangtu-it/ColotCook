@@ -550,4 +550,270 @@ mod tests {
         assert!(prefix.iter().any(|s| s.contains("ulimit -n 128")));
         assert!(prefix.iter().any(|s| s.contains("ulimit -u 32")));
     }
+
+    // --- Additional sandbox tests ---
+
+    #[test]
+    fn filesystem_isolation_mode_as_str() {
+        assert_eq!(FilesystemIsolationMode::Off.as_str(), "off");
+        assert_eq!(FilesystemIsolationMode::WorkspaceOnly.as_str(), "workspace-only");
+        assert_eq!(FilesystemIsolationMode::AllowList.as_str(), "allow-list");
+    }
+
+    #[test]
+    fn filesystem_isolation_mode_default_is_workspace_only() {
+        assert_eq!(FilesystemIsolationMode::default(), FilesystemIsolationMode::WorkspaceOnly);
+    }
+
+    #[test]
+    fn sandbox_config_default_is_all_none() {
+        let config = SandboxConfig::default();
+        assert!(config.enabled.is_none());
+        assert!(config.namespace_restrictions.is_none());
+        assert!(config.network_isolation.is_none());
+        assert!(config.filesystem_mode.is_none());
+        assert!(config.allowed_mounts.is_empty());
+        assert!(config.resource_limits.is_none());
+    }
+
+    #[test]
+    fn resolve_request_uses_defaults_when_no_overrides() {
+        let config = SandboxConfig::default();
+        let request = config.resolve_request(None, None, None, None, None);
+        // Default enabled = true
+        assert!(request.enabled);
+        // Default namespace_restrictions = true
+        assert!(request.namespace_restrictions);
+        // Default network_isolation = false
+        assert!(!request.network_isolation);
+        // Default filesystem_mode = WorkspaceOnly
+        assert_eq!(request.filesystem_mode, FilesystemIsolationMode::WorkspaceOnly);
+    }
+
+    #[test]
+    fn resolve_request_override_enabled_false() {
+        let config = SandboxConfig {
+            enabled: Some(true),
+            ..Default::default()
+        };
+        let request = config.resolve_request(Some(false), None, None, None, None);
+        assert!(!request.enabled);
+    }
+
+    #[test]
+    fn resolve_request_uses_config_enabled_when_no_override() {
+        let config = SandboxConfig {
+            enabled: Some(false),
+            ..Default::default()
+        };
+        let request = config.resolve_request(None, None, None, None, None);
+        assert!(!request.enabled);
+    }
+
+    #[test]
+    fn resolve_request_uses_config_resource_limits() {
+        use super::ResourceLimits;
+        let custom_limits = ResourceLimits {
+            max_cpu_seconds: 99,
+            max_memory_bytes: 1024,
+            max_open_files: 10,
+            max_processes: 5,
+            max_file_size_bytes: 512,
+        };
+        let config = SandboxConfig {
+            resource_limits: Some(custom_limits.clone()),
+            ..Default::default()
+        };
+        let request = config.resolve_request(None, None, None, None, None);
+        assert_eq!(request.resource_limits.max_cpu_seconds, 99);
+    }
+
+    #[test]
+    fn resource_limits_default_values() {
+        use super::ResourceLimits;
+        let limits = ResourceLimits::default();
+        assert_eq!(limits.max_cpu_seconds, 300);
+        assert_eq!(limits.max_memory_bytes, 512 * 1024 * 1024);
+        assert_eq!(limits.max_open_files, 256);
+        assert_eq!(limits.max_processes, 64);
+        assert_eq!(limits.max_file_size_bytes, 100 * 1024 * 1024);
+    }
+
+    #[test]
+    fn resource_limit_shell_prefix_zero_values_skipped() {
+        use super::ResourceLimits;
+        let limits = ResourceLimits {
+            max_cpu_seconds: 0,
+            max_memory_bytes: 0,
+            max_open_files: 0,
+            max_processes: 0,
+            max_file_size_bytes: 0,
+        };
+        let prefix = super::resource_limit_shell_prefix(&limits);
+        assert!(prefix.is_empty());
+    }
+
+    #[test]
+    fn resource_limit_shell_prefix_memory_converted_to_kb() {
+        use super::ResourceLimits;
+        let limits = ResourceLimits {
+            max_cpu_seconds: 0,
+            max_memory_bytes: 1024 * 1024, // 1 MB = 1024 KB
+            max_open_files: 0,
+            max_processes: 0,
+            max_file_size_bytes: 0,
+        };
+        let prefix = super::resource_limit_shell_prefix(&limits);
+        assert!(prefix.iter().any(|s| s.contains("ulimit -v 1024")));
+    }
+
+    #[test]
+    fn resource_limit_shell_prefix_file_size_converted_to_blocks() {
+        use super::ResourceLimits;
+        let limits = ResourceLimits {
+            max_cpu_seconds: 0,
+            max_memory_bytes: 0,
+            max_open_files: 0,
+            max_processes: 0,
+            max_file_size_bytes: 1024, // 2 blocks of 512 bytes
+        };
+        let prefix = super::resource_limit_shell_prefix(&limits);
+        assert!(prefix.iter().any(|s| s.contains("ulimit -f 2")));
+    }
+
+    #[test]
+    fn detect_container_from_no_markers() {
+        let env = detect_container_environment_from(super::SandboxDetectionInputs {
+            env_pairs: vec![],
+            dockerenv_exists: false,
+            containerenv_exists: false,
+            proc_1_cgroup: None,
+        });
+        assert!(!env.in_container);
+        assert!(env.markers.is_empty());
+    }
+
+    #[test]
+    fn detect_container_from_containerenv_file() {
+        let env = detect_container_environment_from(super::SandboxDetectionInputs {
+            env_pairs: vec![],
+            dockerenv_exists: false,
+            containerenv_exists: true,
+            proc_1_cgroup: None,
+        });
+        assert!(env.in_container);
+        assert!(env.markers.iter().any(|m| m == "/run/.containerenv"));
+    }
+
+    #[test]
+    fn detect_container_from_kubernetes_env() {
+        let env = detect_container_environment_from(super::SandboxDetectionInputs {
+            env_pairs: vec![("KUBERNETES_SERVICE_HOST".to_string(), "10.0.0.1".to_string())],
+            dockerenv_exists: false,
+            containerenv_exists: false,
+            proc_1_cgroup: None,
+        });
+        assert!(env.in_container);
+        assert!(env.markers.iter().any(|m| m.contains("KUBERNETES_SERVICE_HOST")));
+    }
+
+    #[test]
+    fn detect_container_from_empty_env_value_not_marked() {
+        // Env vars with empty values should not trigger container detection
+        let env = detect_container_environment_from(super::SandboxDetectionInputs {
+            env_pairs: vec![("DOCKER".to_string(), String::new())],
+            dockerenv_exists: false,
+            containerenv_exists: false,
+            proc_1_cgroup: None,
+        });
+        assert!(!env.in_container);
+    }
+
+    #[test]
+    fn detect_container_from_podman_cgroup() {
+        let env = detect_container_environment_from(super::SandboxDetectionInputs {
+            env_pairs: vec![],
+            dockerenv_exists: false,
+            containerenv_exists: false,
+            proc_1_cgroup: Some("10:cpuset:/podman/abc123"),
+        });
+        assert!(env.in_container);
+        assert!(env.markers.iter().any(|m| m.contains("podman")));
+    }
+
+    #[test]
+    fn detect_container_from_kubepods_cgroup() {
+        let env = detect_container_environment_from(super::SandboxDetectionInputs {
+            env_pairs: vec![],
+            dockerenv_exists: false,
+            containerenv_exists: false,
+            proc_1_cgroup: Some("12:memory:/kubepods/pod-abc"),
+        });
+        assert!(env.in_container);
+        assert!(env.markers.iter().any(|m| m.contains("kubepods")));
+    }
+
+    #[test]
+    fn detect_container_markers_dedup() {
+        // Markers should be deduplicated
+        let env = detect_container_environment_from(super::SandboxDetectionInputs {
+            env_pairs: vec![],
+            dockerenv_exists: true,
+            containerenv_exists: false,
+            proc_1_cgroup: None,
+        });
+        let dockerenv_count = env.markers.iter().filter(|m| *m == "/.dockerenv").count();
+        assert_eq!(dockerenv_count, 1);
+    }
+
+    #[test]
+    fn validate_allowed_mounts_empty_list_is_ok() {
+        assert!(super::validate_allowed_mounts(&[]).is_ok());
+    }
+
+    #[test]
+    fn validate_allowed_mounts_multiple_safe_paths_all_ok() {
+        let mounts = vec![
+            "/home/user".to_string(),
+            "/data/workspace".to_string(),
+            "/tmp/builds".to_string(),
+        ];
+        assert!(super::validate_allowed_mounts(&mounts).is_ok());
+    }
+
+    #[test]
+    fn validate_allowed_mounts_child_of_sensitive_path_is_err() {
+        // /root/.ssh is a child of /root, which is sensitive
+        assert!(super::validate_allowed_mounts(&["/root/.ssh/keys".to_string()]).is_err());
+    }
+
+    #[test]
+    fn validate_allowed_mounts_parent_of_sensitive_path_is_err() {
+        // Mounting "/" would be a parent of /etc/passwd
+        assert!(super::validate_allowed_mounts(&["/".to_string()]).is_err());
+    }
+
+    #[test]
+    fn sandbox_config_serialization_roundtrip() {
+        let config = SandboxConfig {
+            enabled: Some(true),
+            namespace_restrictions: Some(false),
+            network_isolation: Some(true),
+            filesystem_mode: Some(FilesystemIsolationMode::AllowList),
+            allowed_mounts: vec!["/data".to_string()],
+            resource_limits: None,
+        };
+        let json = serde_json::to_string(&config).expect("serialize");
+        let decoded: SandboxConfig = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(config, decoded);
+    }
+
+    #[test]
+    fn filesystem_isolation_mode_serialization() {
+        let mode = FilesystemIsolationMode::AllowList;
+        let json = serde_json::to_string(&mode).expect("serialize");
+        assert_eq!(json, "\"allow-list\"");
+        let decoded: FilesystemIsolationMode = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(decoded, mode);
+    }
 }

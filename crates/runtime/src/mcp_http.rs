@@ -658,6 +658,159 @@ mod sse_tests {
         let events = parse_sse_events(raw);
         assert_eq!(events[0].id.as_deref(), Some("evt-42"));
     }
+
+    // Additional SSE parse tests for better coverage
+
+    #[test]
+    fn parse_empty_input_returns_no_events() {
+        let events = parse_sse_events("");
+        assert_eq!(events.len(), 0);
+    }
+
+    #[test]
+    fn parse_only_comments_returns_no_events() {
+        let raw = ": comment1\n: comment2\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 0);
+    }
+
+    #[test]
+    fn parse_event_without_trailing_empty_line() {
+        // Stream ends without trailing blank line — should still capture the event
+        let raw = "data: no trailing newline";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "no trailing newline");
+    }
+
+    #[test]
+    fn parse_multiple_events_separated_by_blank_lines() {
+        let raw = "data: first\n\ndata: second\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].data, "first");
+        assert_eq!(events[1].data, "second");
+    }
+
+    #[test]
+    fn parse_event_type_is_trimmed() {
+        let raw = "event:  message  \ndata: hello\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events[0].event_type.as_deref(), Some("message"));
+    }
+
+    #[test]
+    fn parse_id_is_trimmed() {
+        let raw = "id:  abc-123  \ndata: payload\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events[0].id.as_deref(), Some("abc-123"));
+    }
+
+    #[test]
+    fn parse_data_without_leading_space() {
+        // "data:value" (no space after colon)
+        let raw = "data:raw-value\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events[0].data, "raw-value");
+    }
+
+    #[test]
+    fn parse_data_with_leading_space() {
+        // "data: value" (one space after colon is stripped)
+        let raw = "data: spaced-value\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events[0].data, "spaced-value");
+    }
+
+    #[test]
+    fn parse_event_resets_type_after_dispatch() {
+        let raw = "event: ping\ndata: a\n\ndata: b\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].event_type.as_deref(), Some("ping"));
+        // Second event should not inherit first event's type
+        assert_eq!(events[1].event_type, None);
+    }
+
+    #[test]
+    fn parse_event_resets_id_after_dispatch() {
+        let raw = "id: first-id\ndata: a\n\ndata: b\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].id.as_deref(), Some("first-id"));
+        assert_eq!(events[1].id, None);
+    }
+
+    #[test]
+    fn classify_error_event() {
+        let events = vec![SseEvent {
+            event_type: Some("error".into()),
+            data: "connection refused".into(),
+            id: None,
+        }];
+        let classified = classify_mcp_sse_events(&events);
+        assert_eq!(classified.len(), 1);
+        assert!(matches!(&classified[0], McpSseMessage::Error(msg) if msg == "connection refused"));
+    }
+
+    #[test]
+    fn classify_unknown_event_type_is_ignored() {
+        let events = vec![SseEvent {
+            event_type: Some("custom-unknown-type".into()),
+            data: "some data".into(),
+            id: None,
+        }];
+        let classified = classify_mcp_sse_events(&events);
+        assert_eq!(classified.len(), 0);
+    }
+
+    #[test]
+    fn classify_none_event_type_is_message() {
+        let events = vec![SseEvent {
+            event_type: None,
+            data: "implicit message".into(),
+            id: None,
+        }];
+        let classified = classify_mcp_sse_events(&events);
+        assert_eq!(classified.len(), 1);
+        assert!(matches!(&classified[0], McpSseMessage::Message(s) if s == "implicit message"));
+    }
+
+    #[test]
+    fn classify_empty_events_slice() {
+        let classified = classify_mcp_sse_events(&[]);
+        assert_eq!(classified.len(), 0);
+    }
+
+    #[test]
+    fn sse_event_clone_and_equality() {
+        let event = SseEvent {
+            event_type: Some("message".into()),
+            data: "hello".into(),
+            id: Some("1".into()),
+        };
+        let cloned = event.clone();
+        assert_eq!(event, cloned);
+    }
+
+    #[test]
+    fn mcp_sse_message_clone_and_equality() {
+        let msg = McpSseMessage::Endpoint("/test".into());
+        let cloned = msg.clone();
+        assert_eq!(msg, cloned);
+
+        assert_eq!(McpSseMessage::Ping, McpSseMessage::Ping);
+    }
+
+    #[test]
+    fn parse_data_trailing_newline_stripped() {
+        // The spec says trailing newline from data is removed
+        let raw = "data: value\n\n\n";
+        let events = parse_sse_events(raw);
+        assert_eq!(events.len(), 1);
+        // data should not end with \n
+        assert!(!events[0].data.ends_with('\n'));
+    }
 }
 
 #[cfg(test)]

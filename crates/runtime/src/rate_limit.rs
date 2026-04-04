@@ -182,4 +182,123 @@ mod tests {
         assert!(config.max_requests_per_minute > 0);
         assert!(config.max_tokens_per_minute > 0);
     }
+
+    // --- Additional edge-case tests ---
+
+    #[test]
+    fn allows_request_with_zero_tokens() {
+        let limiter = RateLimiter::new(RateLimitConfig {
+            max_requests_per_minute: 10,
+            max_tokens_per_minute: 100,
+        });
+        // Zero-token request should be allowed
+        assert_eq!(limiter.check_request(0), RateLimitDecision::Allowed);
+    }
+
+    #[test]
+    fn token_limit_exactly_at_boundary() {
+        let limiter = RateLimiter::new(RateLimitConfig {
+            max_requests_per_minute: 100,
+            max_tokens_per_minute: 100,
+        });
+        // Exactly at the limit
+        assert_eq!(limiter.check_request(100), RateLimitDecision::Allowed);
+        // Now at exactly 100, requesting 1 more should fail (100 + 1 > 100)
+        assert!(matches!(
+            limiter.check_request(1),
+            RateLimitDecision::RetryAfter(_)
+        ));
+    }
+
+    #[test]
+    fn rate_limit_decision_equality() {
+        assert_eq!(RateLimitDecision::Allowed, RateLimitDecision::Allowed);
+        let d = Duration::from_secs(5);
+        assert_eq!(
+            RateLimitDecision::RetryAfter(d),
+            RateLimitDecision::RetryAfter(d)
+        );
+        assert_ne!(
+            RateLimitDecision::Allowed,
+            RateLimitDecision::RetryAfter(Duration::from_secs(1))
+        );
+    }
+
+    #[test]
+    fn rate_limit_config_clone() {
+        let config = RateLimitConfig {
+            max_requests_per_minute: 30,
+            max_tokens_per_minute: 5000,
+        };
+        let cloned = config.clone();
+        assert_eq!(cloned.max_requests_per_minute, 30);
+        assert_eq!(cloned.max_tokens_per_minute, 5000);
+    }
+
+    #[test]
+    fn record_usage_increases_token_count() {
+        let limiter = RateLimiter::new(RateLimitConfig {
+            max_requests_per_minute: 10,
+            max_tokens_per_minute: 500,
+        });
+        // Allow a request first
+        assert_eq!(limiter.check_request(200), RateLimitDecision::Allowed);
+        // Record actual usage that pushes us near limit
+        limiter.record_usage(250); // total would be 200 + 250 = 450 recorded
+        // After recording, requesting 100 more should exceed the limit (450 + 100 > 500)
+        assert!(matches!(
+            limiter.check_request(100),
+            RateLimitDecision::RetryAfter(_)
+        ));
+    }
+
+    #[test]
+    fn record_usage_does_not_panic_on_overflow() {
+        let limiter = RateLimiter::new(RateLimitConfig {
+            max_requests_per_minute: 10,
+            max_tokens_per_minute: u32::MAX,
+        });
+        // Record near max value — saturating_add should prevent overflow
+        limiter.record_usage(u32::MAX - 1);
+        limiter.record_usage(u32::MAX); // Should saturate, not panic
+    }
+
+    #[test]
+    fn config_accessor_returns_config() {
+        let config = RateLimitConfig {
+            max_requests_per_minute: 42,
+            max_tokens_per_minute: 9999,
+        };
+        let limiter = RateLimiter::new(config.clone());
+        assert_eq!(limiter.config().max_requests_per_minute, 42);
+        assert_eq!(limiter.config().max_tokens_per_minute, 9999);
+    }
+
+    #[test]
+    fn single_request_allowed_then_denied_at_limit_1() {
+        let limiter = RateLimiter::new(RateLimitConfig {
+            max_requests_per_minute: 1,
+            max_tokens_per_minute: 10000,
+        });
+        assert_eq!(limiter.check_request(1), RateLimitDecision::Allowed);
+        assert!(matches!(
+            limiter.check_request(1),
+            RateLimitDecision::RetryAfter(_)
+        ));
+    }
+
+    #[test]
+    fn rate_limit_decision_debug_format() {
+        let s = format!("{:?}", RateLimitDecision::Allowed);
+        assert!(!s.is_empty());
+        let s2 = format!("{:?}", RateLimitDecision::RetryAfter(Duration::from_secs(1)));
+        assert!(!s2.is_empty());
+    }
+
+    #[test]
+    fn rate_limiter_debug_format() {
+        let limiter = RateLimiter::new(RateLimitConfig::default());
+        let s = format!("{limiter:?}");
+        assert!(!s.is_empty());
+    }
 }
