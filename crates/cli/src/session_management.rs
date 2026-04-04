@@ -239,6 +239,148 @@ pub(crate) fn render_session_list(
     Ok(lines.join("\n"))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    // ── is_managed_session_file ──────────────────────────────────────────────
+
+    #[test]
+    fn is_managed_session_file_jsonl_extension() {
+        assert!(is_managed_session_file(Path::new("session.jsonl")));
+    }
+
+    #[test]
+    fn is_managed_session_file_json_extension() {
+        assert!(is_managed_session_file(Path::new("session.json")));
+    }
+
+    #[test]
+    fn is_managed_session_file_txt_extension_false() {
+        assert!(!is_managed_session_file(Path::new("session.txt")));
+    }
+
+    #[test]
+    fn is_managed_session_file_no_extension_false() {
+        assert!(!is_managed_session_file(Path::new("session")));
+    }
+
+    #[test]
+    fn is_managed_session_file_rs_extension_false() {
+        assert!(!is_managed_session_file(Path::new("main.rs")));
+    }
+
+    #[test]
+    fn is_managed_session_file_full_path_jsonl() {
+        assert!(is_managed_session_file(Path::new(
+            "/home/user/.colotcook/sessions/abc123.jsonl"
+        )));
+    }
+
+    // ── format_missing_session_reference ────────────────────────────────────
+
+    #[test]
+    fn format_missing_session_reference_contains_reference() {
+        let msg = format_missing_session_reference("my-session-id");
+        assert!(msg.contains("my-session-id"));
+    }
+
+    #[test]
+    fn format_missing_session_reference_contains_hint() {
+        let msg = format_missing_session_reference("x");
+        assert!(msg.contains(".colotcook/sessions/"));
+        assert!(msg.contains(LATEST_SESSION_REFERENCE));
+    }
+
+    // ── format_no_managed_sessions ──────────────────────────────────────────
+
+    #[test]
+    fn format_no_managed_sessions_contains_directory_hint() {
+        let msg = format_no_managed_sessions();
+        assert!(msg.contains(".colotcook/sessions/"));
+    }
+
+    #[test]
+    fn format_no_managed_sessions_contains_resume_hint() {
+        let msg = format_no_managed_sessions();
+        assert!(msg.contains(LATEST_SESSION_REFERENCE));
+    }
+
+    // ── format_session_modified_age ──────────────────────────────────────────
+
+    #[test]
+    fn format_session_modified_age_just_now_for_zero_delta() {
+        // Pass "now" epoch millis so delta is 0 seconds
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let result = format_session_modified_age(now_millis);
+        assert_eq!(result, "just-now");
+    }
+
+    #[test]
+    fn format_session_modified_age_seconds_ago() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        // 30 seconds ago
+        let past = now_millis.saturating_sub(30_000);
+        let result = format_session_modified_age(past);
+        assert!(result.ends_with("s-ago"), "unexpected result: {result}");
+    }
+
+    #[test]
+    fn format_session_modified_age_minutes_ago() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        // 5 minutes ago
+        let past = now_millis.saturating_sub(5 * 60 * 1_000);
+        let result = format_session_modified_age(past);
+        assert!(result.ends_with("m-ago"), "unexpected result: {result}");
+    }
+
+    #[test]
+    fn format_session_modified_age_hours_ago() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        // 2 hours ago
+        let past = now_millis.saturating_sub(2 * 3_600 * 1_000);
+        let result = format_session_modified_age(past);
+        assert!(result.ends_with("h-ago"), "unexpected result: {result}");
+    }
+
+    #[test]
+    fn format_session_modified_age_days_ago() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        // 3 days ago
+        let past = now_millis.saturating_sub(3 * 86_400 * 1_000);
+        let result = format_session_modified_age(past);
+        assert!(result.ends_with("d-ago"), "unexpected result: {result}");
+    }
+
+    #[test]
+    fn format_session_modified_age_weeks_displayed_as_days() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        // 2 weeks ago — displayed as Xd-ago
+        let past = now_millis.saturating_sub(14 * 86_400 * 1_000);
+        let result = format_session_modified_age(past);
+        assert!(result.ends_with("d-ago"), "unexpected result: {result}");
+    }
+}
+
 /// Format a human-readable age string from an epoch-millis timestamp.
 pub(crate) fn format_session_modified_age(modified_epoch_millis: u128) -> String {
     let now = std::time::SystemTime::now()

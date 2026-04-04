@@ -981,6 +981,338 @@ pub(crate) fn render_repl_help() -> String {
     .join("\n")
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use colotcook_runtime::{SandboxStatus, TokenUsage};
+
+    // ── format_model_report ──────────────────────────────────────────────────
+
+    #[test]
+    fn format_model_report_contains_model_name() {
+        let result = format_model_report("claude-3-opus", 10, 5);
+        assert!(result.contains("claude-3-opus"));
+        assert!(result.contains("10"));
+        assert!(result.contains("5"));
+    }
+
+    #[test]
+    fn format_model_report_contains_usage_section() {
+        let result = format_model_report("model-x", 0, 0);
+        assert!(result.contains("Usage"));
+        assert!(result.contains("/model"));
+    }
+
+    // ── format_model_switch_report ───────────────────────────────────────────
+
+    #[test]
+    fn format_model_switch_report_contains_previous_and_next() {
+        let result = format_model_switch_report("old-model", "new-model", 5);
+        assert!(result.contains("old-model"));
+        assert!(result.contains("new-model"));
+        assert!(result.contains("5"));
+    }
+
+    #[test]
+    fn format_model_switch_report_has_update_header() {
+        let result = format_model_switch_report("a", "b", 0);
+        assert!(result.starts_with("Model updated"));
+    }
+
+    // ── format_permissions_report ────────────────────────────────────────────
+
+    #[test]
+    fn format_permissions_report_marks_current_mode() {
+        let result = format_permissions_report("read-only");
+        assert!(result.contains("● current"));
+        assert!(result.contains("read-only"));
+    }
+
+    #[test]
+    fn format_permissions_report_workspace_write_current() {
+        let result = format_permissions_report("workspace-write");
+        assert!(result.contains("workspace-write"));
+        assert!(result.contains("● current"));
+    }
+
+    #[test]
+    fn format_permissions_report_all_modes_listed() {
+        let result = format_permissions_report("read-only");
+        assert!(result.contains("read-only"));
+        assert!(result.contains("workspace-write"));
+        assert!(result.contains("danger-full-access"));
+    }
+
+    // ── format_permissions_switch_report ────────────────────────────────────
+
+    #[test]
+    fn format_permissions_switch_report_shows_prev_and_next() {
+        let result = format_permissions_switch_report("read-only", "workspace-write");
+        assert!(result.contains("read-only"));
+        assert!(result.contains("workspace-write"));
+    }
+
+    #[test]
+    fn format_permissions_switch_report_has_updated_header() {
+        let result = format_permissions_switch_report("a", "b");
+        assert!(result.starts_with("Permissions updated"));
+    }
+
+    // ── format_cost_report ───────────────────────────────────────────────────
+
+    #[test]
+    fn format_cost_report_shows_token_counts() {
+        let usage = TokenUsage {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_creation_input_tokens: 10,
+            cache_read_input_tokens: 5,
+        };
+        let result = format_cost_report(usage);
+        assert!(result.contains("100"));
+        assert!(result.contains("50"));
+        assert!(result.contains("10"));
+        assert!(result.contains("5"));
+    }
+
+    #[test]
+    fn format_cost_report_shows_total() {
+        let usage = TokenUsage {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+        };
+        let result = format_cost_report(usage);
+        // total = 150
+        assert!(result.contains("150"));
+    }
+
+    #[test]
+    fn format_cost_report_zero_usage() {
+        let usage = TokenUsage::default();
+        let result = format_cost_report(usage);
+        assert!(result.contains("Cost"));
+    }
+
+    // ── format_compact_report ────────────────────────────────────────────────
+
+    #[test]
+    fn format_compact_report_compacted_variant() {
+        let result = format_compact_report(5, 10, false);
+        assert!(result.contains("compacted"));
+        assert!(result.contains("5"));
+        assert!(result.contains("10"));
+    }
+
+    #[test]
+    fn format_compact_report_skipped_variant() {
+        let result = format_compact_report(0, 8, true);
+        assert!(result.contains("skipped"));
+        assert!(result.contains("8"));
+    }
+
+    // ── format_sandbox_report ────────────────────────────────────────────────
+
+    #[test]
+    fn format_sandbox_report_default_status_renders() {
+        let status = SandboxStatus::default();
+        let result = format_sandbox_report(&status);
+        assert!(result.starts_with("Sandbox"));
+        assert!(result.contains("<none>"));
+    }
+
+    #[test]
+    fn format_sandbox_report_with_fallback_reason() {
+        let mut status = SandboxStatus::default();
+        status.fallback_reason = Some("unsupported platform".to_string());
+        let result = format_sandbox_report(&status);
+        assert!(result.contains("unsupported platform"));
+    }
+
+    #[test]
+    fn format_sandbox_report_with_allowed_mounts() {
+        let mut status = SandboxStatus::default();
+        status.allowed_mounts = vec!["/tmp".to_string(), "/home".to_string()];
+        let result = format_sandbox_report(&status);
+        assert!(result.contains("/tmp"));
+        assert!(result.contains("/home"));
+    }
+
+    // ── render_version_report ────────────────────────────────────────────────
+
+    #[test]
+    fn render_version_report_contains_colotcook_header() {
+        let result = render_version_report();
+        assert!(result.starts_with("ColotCook"));
+    }
+
+    #[test]
+    fn render_version_report_contains_version_field() {
+        let result = render_version_report();
+        assert!(result.contains("Version"));
+    }
+
+    #[test]
+    fn render_version_report_contains_build_date() {
+        let result = render_version_report();
+        assert!(result.contains("Build date"));
+    }
+
+    // ── parse_git_status_branch ──────────────────────────────────────────────
+
+    #[test]
+    fn parse_git_status_branch_normal_branch() {
+        let status = "## main...origin/main\nM  src/main.rs";
+        assert_eq!(parse_git_status_branch(Some(status)), Some("main".to_string()));
+    }
+
+    #[test]
+    fn parse_git_status_branch_detached_head() {
+        let status = "## HEAD (no branch)";
+        let result = parse_git_status_branch(Some(status));
+        assert_eq!(result, Some("detached HEAD".to_string()));
+    }
+
+    #[test]
+    fn parse_git_status_branch_none_input() {
+        assert!(parse_git_status_branch(None).is_none());
+    }
+
+    #[test]
+    fn parse_git_status_branch_feature_branch() {
+        let status = "## feature/my-feature...origin/feature/my-feature";
+        let result = parse_git_status_branch(Some(status));
+        assert_eq!(result, Some("feature/my-feature".to_string()));
+    }
+
+    // ── parse_git_workspace_summary ──────────────────────────────────────────
+
+    #[test]
+    fn parse_git_workspace_summary_none_returns_default() {
+        let summary = parse_git_workspace_summary(None);
+        assert_eq!(summary, GitWorkspaceSummary::default());
+    }
+
+    #[test]
+    fn parse_git_workspace_summary_untracked_file() {
+        let status = "## main\n?? new-file.txt";
+        let summary = parse_git_workspace_summary(Some(status));
+        assert_eq!(summary.untracked_files, 1);
+        assert_eq!(summary.changed_files, 1);
+    }
+
+    #[test]
+    fn parse_git_workspace_summary_staged_and_unstaged() {
+        let status = "## main\nMM src/main.rs\nA  new.rs";
+        let summary = parse_git_workspace_summary(Some(status));
+        assert_eq!(summary.changed_files, 2);
+        assert!(summary.staged_files > 0);
+        assert!(summary.unstaged_files > 0);
+    }
+
+    #[test]
+    fn parse_git_workspace_summary_clean_status() {
+        let status = "## main...origin/main";
+        let summary = parse_git_workspace_summary(Some(status));
+        assert!(summary.is_clean());
+    }
+
+    #[test]
+    fn git_workspace_summary_headline_clean() {
+        let summary = GitWorkspaceSummary::default();
+        assert_eq!(summary.headline(), "clean");
+    }
+
+    #[test]
+    fn git_workspace_summary_headline_dirty() {
+        let summary = GitWorkspaceSummary {
+            changed_files: 3,
+            staged_files: 1,
+            unstaged_files: 2,
+            untracked_files: 0,
+            conflicted_files: 0,
+        };
+        let headline = summary.headline();
+        assert!(headline.contains("dirty"));
+        assert!(headline.contains("3 files"));
+        assert!(headline.contains("1 staged"));
+        assert!(headline.contains("2 unstaged"));
+    }
+
+    // ── render_export_text ───────────────────────────────────────────────────
+
+    #[test]
+    fn render_export_text_empty_session_has_header() {
+        use colotcook_runtime::Session;
+        let session = Session::default();
+        let result = render_export_text(&session);
+        assert!(result.starts_with("# Conversation Export"));
+    }
+
+    // ── default_export_filename ──────────────────────────────────────────────
+
+    #[test]
+    fn default_export_filename_empty_session_uses_fallback() {
+        use colotcook_runtime::Session;
+        let session = Session::default();
+        let result = default_export_filename(&session);
+        assert!(result.ends_with(".txt"));
+    }
+
+    #[test]
+    fn default_export_filename_with_user_message() {
+        use colotcook_runtime::{ContentBlock, ConversationMessage, MessageRole, Session};
+        let mut session = Session::default();
+        session.messages.push(ConversationMessage {
+            role: MessageRole::User,
+            blocks: vec![ContentBlock::Text {
+                text: "Hello World test".to_string(),
+            }],
+            usage: None,
+        });
+        let result = default_export_filename(&session);
+        assert!(result.ends_with(".txt"));
+        assert!(result.contains("hello"));
+    }
+
+    // ── normalize_permission_mode ────────────────────────────────────────────
+
+    #[test]
+    fn normalize_permission_mode_read_only() {
+        assert_eq!(normalize_permission_mode("read-only"), Some("read-only"));
+    }
+
+    #[test]
+    fn normalize_permission_mode_workspace_write() {
+        assert_eq!(
+            normalize_permission_mode("workspace-write"),
+            Some("workspace-write")
+        );
+    }
+
+    #[test]
+    fn normalize_permission_mode_danger_full_access() {
+        assert_eq!(
+            normalize_permission_mode("danger-full-access"),
+            Some("danger-full-access")
+        );
+    }
+
+    #[test]
+    fn normalize_permission_mode_unknown_returns_none() {
+        assert!(normalize_permission_mode("unknown-mode").is_none());
+    }
+
+    #[test]
+    fn normalize_permission_mode_trims_whitespace() {
+        assert_eq!(
+            normalize_permission_mode("  read-only  "),
+            Some("read-only")
+        );
+    }
+}
+
 /// Print a /status snapshot (used in non-REPL mode).
 pub(crate) fn print_status_snapshot(
     model: &str,

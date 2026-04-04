@@ -287,6 +287,358 @@ pub(crate) fn git_status_ok(args: &[&str]) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── levenshtein_distance ─────────────────────────────────────────────────
+
+    #[test]
+    fn levenshtein_same_string_is_zero() {
+        assert_eq!(levenshtein_distance("hello", "hello"), 0);
+    }
+
+    #[test]
+    fn levenshtein_empty_left_is_right_len() {
+        assert_eq!(levenshtein_distance("", "abc"), 3);
+    }
+
+    #[test]
+    fn levenshtein_empty_right_is_left_len() {
+        assert_eq!(levenshtein_distance("abc", ""), 3);
+    }
+
+    #[test]
+    fn levenshtein_both_empty_is_zero() {
+        assert_eq!(levenshtein_distance("", ""), 0);
+    }
+
+    #[test]
+    fn levenshtein_single_substitution() {
+        assert_eq!(levenshtein_distance("cat", "bat"), 1);
+    }
+
+    #[test]
+    fn levenshtein_insertion() {
+        assert_eq!(levenshtein_distance("cat", "cats"), 1);
+    }
+
+    #[test]
+    fn levenshtein_deletion() {
+        assert_eq!(levenshtein_distance("cats", "cat"), 1);
+    }
+
+    #[test]
+    fn levenshtein_completely_different() {
+        assert_eq!(levenshtein_distance("abc", "xyz"), 3);
+    }
+
+    #[test]
+    fn levenshtein_unicode_chars() {
+        // Both strings have 3 chars, same content → distance 0
+        assert_eq!(levenshtein_distance("日本語", "日本語"), 0);
+    }
+
+    // ── ranked_suggestions ──────────────────────────────────────────────────
+
+    #[test]
+    fn ranked_suggestions_exact_match_first() {
+        let candidates = &["help", "hello", "heap"][..];
+        let results = ranked_suggestions("help", candidates);
+        assert_eq!(results[0], "help");
+    }
+
+    #[test]
+    fn ranked_suggestions_empty_candidates() {
+        let results = ranked_suggestions("help", &[]);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn ranked_suggestions_max_three_results() {
+        let candidates = &["help", "heap", "heal", "heat", "hear"][..];
+        let results = ranked_suggestions("help", candidates);
+        assert!(results.len() <= 3);
+    }
+
+    #[test]
+    fn ranked_suggestions_slash_prefix_normalized() {
+        let candidates = &["help"][..];
+        let results = ranked_suggestions("/help", candidates);
+        assert!(!results.is_empty());
+    }
+
+    #[test]
+    fn ranked_suggestions_case_insensitive() {
+        let candidates = &["Help"][..];
+        let results = ranked_suggestions("help", candidates);
+        assert!(!results.is_empty());
+    }
+
+    #[test]
+    fn ranked_suggestions_no_match_beyond_threshold() {
+        // "zzz" is more than 4 edits away from "abc"
+        let candidates = &["abc"][..];
+        let results = ranked_suggestions("zzzzz", candidates);
+        assert!(results.is_empty());
+    }
+
+    // ── suggest_closest_term ────────────────────────────────────────────────
+
+    #[test]
+    fn suggest_closest_term_returns_first_match() {
+        let candidates = &["help", "heap"][..];
+        let result = suggest_closest_term("help", candidates);
+        assert_eq!(result, Some("help"));
+    }
+
+    #[test]
+    fn suggest_closest_term_returns_none_when_no_match() {
+        let candidates = &["abc"][..];
+        let result = suggest_closest_term("zzzzz", candidates);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn suggest_closest_term_empty_candidates_returns_none() {
+        let result = suggest_closest_term("help", &[]);
+        assert!(result.is_none());
+    }
+
+    // ── truncate_for_summary ────────────────────────────────────────────────
+
+    #[test]
+    fn truncate_for_summary_under_limit_unchanged() {
+        assert_eq!(truncate_for_summary("hello", 10), "hello");
+    }
+
+    #[test]
+    fn truncate_for_summary_at_limit_unchanged() {
+        assert_eq!(truncate_for_summary("hello", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_for_summary_over_limit_adds_ellipsis() {
+        let result = truncate_for_summary("hello world", 5);
+        assert_eq!(result, "hello…");
+    }
+
+    #[test]
+    fn truncate_for_summary_empty_string() {
+        assert_eq!(truncate_for_summary("", 10), "");
+    }
+
+    #[test]
+    fn truncate_for_summary_limit_zero() {
+        let result = truncate_for_summary("hello", 0);
+        // 0 chars taken, and there's still more → "…"
+        assert_eq!(result, "…");
+    }
+
+    // ── truncate_for_prompt ─────────────────────────────────────────────────
+
+    #[test]
+    fn truncate_for_prompt_under_limit_trimmed() {
+        assert_eq!(truncate_for_prompt("  hello  ", 20), "hello");
+    }
+
+    #[test]
+    fn truncate_for_prompt_over_limit_adds_marker() {
+        let result = truncate_for_prompt("hello world", 5);
+        assert!(result.ends_with("…[truncated]"));
+    }
+
+    #[test]
+    fn truncate_for_prompt_exact_limit() {
+        assert_eq!(truncate_for_prompt("hello", 5), "hello");
+    }
+
+    // ── truncate_output_for_display ─────────────────────────────────────────
+
+    #[test]
+    fn truncate_output_for_display_empty_returns_empty() {
+        assert_eq!(truncate_output_for_display("", 10, 100), "");
+    }
+
+    #[test]
+    fn truncate_output_for_display_only_newlines_returns_empty() {
+        assert_eq!(truncate_output_for_display("\n\n\n", 10, 100), "");
+    }
+
+    #[test]
+    fn truncate_output_for_display_under_limits_unchanged() {
+        let content = "line1\nline2\nline3";
+        let result = truncate_output_for_display(content, 10, 1000);
+        assert_eq!(result, "line1\nline2\nline3");
+    }
+
+    #[test]
+    fn truncate_output_for_display_line_limit_triggers_truncation() {
+        let content = "a\nb\nc\nd\ne";
+        let result = truncate_output_for_display(content, 2, 1000);
+        assert!(result.contains(DISPLAY_TRUNCATION_NOTICE));
+        assert!(result.starts_with("a\nb"));
+    }
+
+    #[test]
+    fn truncate_output_for_display_char_limit_triggers_truncation() {
+        let content = "hello world";
+        let result = truncate_output_for_display(content, 100, 5);
+        assert!(result.contains(DISPLAY_TRUNCATION_NOTICE));
+    }
+
+    #[test]
+    fn truncate_output_for_display_trailing_newlines_stripped() {
+        let content = "hello\n\n\n";
+        let result = truncate_output_for_display(content, 100, 1000);
+        assert_eq!(result, "hello");
+    }
+
+    // ── first_visible_line ──────────────────────────────────────────────────
+
+    #[test]
+    fn first_visible_line_returns_first_non_blank() {
+        assert_eq!(first_visible_line("\n  \nhello\nworld"), "hello");
+    }
+
+    #[test]
+    fn first_visible_line_all_blank_returns_original() {
+        // unwrap_or(text) path — text itself is returned
+        let text = "   \n   ";
+        assert_eq!(first_visible_line(text), text);
+    }
+
+    #[test]
+    fn first_visible_line_single_line() {
+        assert_eq!(first_visible_line("hello"), "hello");
+    }
+
+    #[test]
+    fn first_visible_line_empty_string() {
+        assert_eq!(first_visible_line(""), "");
+    }
+
+    // ── sanitize_generated_message ──────────────────────────────────────────
+
+    #[test]
+    fn sanitize_generated_message_trims_whitespace() {
+        assert_eq!(sanitize_generated_message("  hello  "), "hello");
+    }
+
+    #[test]
+    fn sanitize_generated_message_strips_backticks() {
+        assert_eq!(sanitize_generated_message("`hello`"), "hello");
+    }
+
+    #[test]
+    fn sanitize_generated_message_normalizes_crlf() {
+        assert_eq!(sanitize_generated_message("a\r\nb"), "a\nb");
+    }
+
+    #[test]
+    fn sanitize_generated_message_plain_text_unchanged() {
+        assert_eq!(sanitize_generated_message("hello world"), "hello world");
+    }
+
+    // ── parse_titled_body ───────────────────────────────────────────────────
+
+    #[test]
+    fn parse_titled_body_valid_input() {
+        let input = "TITLE: My Title\nBODY: My body text";
+        let result = parse_titled_body(input);
+        assert_eq!(result, Some(("My Title".to_string(), "My body text".to_string())));
+    }
+
+    #[test]
+    fn parse_titled_body_missing_title_returns_none() {
+        let input = "BODY: Some body";
+        assert!(parse_titled_body(input).is_none());
+    }
+
+    #[test]
+    fn parse_titled_body_missing_body_returns_none() {
+        let input = "TITLE: Some title";
+        assert!(parse_titled_body(input).is_none());
+    }
+
+    #[test]
+    fn parse_titled_body_multiline_body() {
+        let input = "TITLE: T\nBODY: line1\nline2";
+        let result = parse_titled_body(input);
+        assert!(result.is_some());
+        let (title, body) = result.unwrap();
+        assert_eq!(title, "T");
+        assert!(body.contains("line1"));
+    }
+
+    // ── extract_tool_path ───────────────────────────────────────────────────
+
+    #[test]
+    fn extract_tool_path_file_path_key() {
+        let value = serde_json::json!({"file_path": "/foo/bar.rs"});
+        assert_eq!(extract_tool_path(&value), "/foo/bar.rs");
+    }
+
+    #[test]
+    fn extract_tool_path_camel_case_key() {
+        let value = serde_json::json!({"filePath": "/foo/bar.rs"});
+        assert_eq!(extract_tool_path(&value), "/foo/bar.rs");
+    }
+
+    #[test]
+    fn extract_tool_path_path_key() {
+        let value = serde_json::json!({"path": "/foo/bar.rs"});
+        assert_eq!(extract_tool_path(&value), "/foo/bar.rs");
+    }
+
+    #[test]
+    fn extract_tool_path_no_path_key_returns_question_mark() {
+        let value = serde_json::json!({"command": "ls"});
+        assert_eq!(extract_tool_path(&value), "?");
+    }
+
+    #[test]
+    fn extract_tool_path_file_path_takes_priority_over_path() {
+        let value = serde_json::json!({"file_path": "/primary", "path": "/secondary"});
+        assert_eq!(extract_tool_path(&value), "/primary");
+    }
+
+    // ── summarize_tool_payload ──────────────────────────────────────────────
+
+    #[test]
+    fn summarize_tool_payload_valid_json_compacted() {
+        let payload = r#"{"command": "ls -la"}"#;
+        let result = summarize_tool_payload(payload);
+        assert!(result.contains("ls -la"));
+    }
+
+    #[test]
+    fn summarize_tool_payload_invalid_json_returned_trimmed() {
+        let payload = "  not json  ";
+        assert_eq!(summarize_tool_payload(payload), "not json");
+    }
+
+    #[test]
+    fn summarize_tool_payload_long_payload_truncated() {
+        let long = "x".repeat(200);
+        let payload = format!(r#"{{"key": "{long}"}}"#);
+        let result = summarize_tool_payload(&payload);
+        assert!(result.ends_with('…'));
+    }
+
+    // ── command_exists ──────────────────────────────────────────────────────
+
+    #[test]
+    fn command_exists_known_command_returns_true() {
+        assert!(command_exists("ls"));
+    }
+
+    #[test]
+    fn command_exists_nonexistent_command_returns_false() {
+        assert!(!command_exists("__nonexistent_command_xyz_123__"));
+    }
+}
+
 /// Open a URL in the platform default browser.
 pub(crate) fn open_browser(url: &str) -> io::Result<()> {
     let commands = if cfg!(target_os = "macos") {

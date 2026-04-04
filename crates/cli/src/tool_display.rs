@@ -370,3 +370,248 @@ pub(crate) fn format_generic_tool_result(
         format!("{icon} \x1b[38;5;245m{name}:\x1b[0m {preview}")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── format_search_start ──────────────────────────────────────────────────
+
+    #[test]
+    fn format_search_start_includes_pattern_and_scope() {
+        let parsed = serde_json::json!({"pattern": "*.rs", "path": "src/"});
+        let result = format_search_start("🔎 Glob", &parsed);
+        assert!(result.contains("*.rs"));
+        assert!(result.contains("src/"));
+    }
+
+    #[test]
+    fn format_search_start_defaults_when_keys_absent() {
+        let parsed = serde_json::json!({});
+        let result = format_search_start("🔎 Grep", &parsed);
+        assert!(result.contains("?"));
+        assert!(result.contains("."));
+    }
+
+    // ── format_patch_preview ─────────────────────────────────────────────────
+
+    #[test]
+    fn format_patch_preview_both_empty_returns_none() {
+        assert!(format_patch_preview("", "").is_none());
+    }
+
+    #[test]
+    fn format_patch_preview_non_empty_returns_some() {
+        let result = format_patch_preview("old line", "new line");
+        assert!(result.is_some());
+        let s = result.unwrap();
+        assert!(s.contains("old line") || s.contains("new line"));
+    }
+
+    #[test]
+    fn format_patch_preview_contains_minus_and_plus_colored() {
+        let result = format_patch_preview("foo", "bar").unwrap();
+        // ANSI colored lines with - and +
+        assert!(result.contains("foo"));
+        assert!(result.contains("bar"));
+    }
+
+    #[test]
+    fn format_patch_preview_old_only() {
+        let result = format_patch_preview("removed", "");
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("removed"));
+    }
+
+    // ── format_bash_call (via format_tool_call_start) ────────────────────────
+
+    #[test]
+    fn format_tool_call_start_bash_includes_command() {
+        let input = r#"{"command": "ls -la"}"#;
+        let result = format_tool_call_start("bash", input);
+        assert!(result.contains("ls -la"));
+    }
+
+    #[test]
+    fn format_tool_call_start_bash_empty_command() {
+        let input = r#"{"command": ""}"#;
+        let result = format_tool_call_start("bash", input);
+        // Should still render border with bash
+        assert!(result.contains("bash"));
+    }
+
+    #[test]
+    fn format_tool_call_start_read_includes_path() {
+        let input = r#"{"file_path": "/src/main.rs"}"#;
+        let result = format_tool_call_start("read_file", input);
+        assert!(result.contains("/src/main.rs"));
+    }
+
+    #[test]
+    fn format_tool_call_start_write_includes_path_and_lines() {
+        let input = r#"{"file_path": "/out.txt", "content": "line1\nline2\nline3"}"#;
+        let result = format_tool_call_start("write_file", input);
+        assert!(result.contains("/out.txt"));
+        assert!(result.contains("3 lines"));
+    }
+
+    #[test]
+    fn format_tool_call_start_glob_includes_pattern() {
+        let input = r#"{"pattern": "**/*.rs", "path": "."}"#;
+        let result = format_tool_call_start("glob_search", input);
+        assert!(result.contains("**/*.rs"));
+    }
+
+    #[test]
+    fn format_tool_call_start_grep_includes_pattern() {
+        let input = r#"{"pattern": "fn main", "path": "src/"}"#;
+        let result = format_tool_call_start("grep_search", input);
+        assert!(result.contains("fn main"));
+    }
+
+    #[test]
+    fn format_tool_call_start_web_search_shows_query() {
+        let input = r#"{"query": "rust async"}"#;
+        let result = format_tool_call_start("web_search", input);
+        assert!(result.contains("rust async"));
+    }
+
+    // ── format_tool_result (bash) ────────────────────────────────────────────
+
+    #[test]
+    fn format_tool_result_bash_success_shows_stdout() {
+        let output = r#"{"stdout": "hello world", "stderr": "", "returnCodeInterpretation": "success"}"#;
+        let result = format_tool_result("bash", output, false);
+        assert!(result.contains("hello world"));
+    }
+
+    #[test]
+    fn format_tool_result_bash_error_shows_summary() {
+        let result = format_tool_result("bash", "command failed: no such file", true);
+        assert!(result.contains("command failed"));
+    }
+
+    #[test]
+    fn format_tool_result_bash_backgrounded() {
+        let output = r#"{"backgroundTaskId": "task-123"}"#;
+        let result = format_tool_result("bash", output, false);
+        assert!(result.contains("task-123"));
+    }
+
+    // ── format_read_result ───────────────────────────────────────────────────
+
+    #[test]
+    fn format_tool_result_read_shows_path_and_content() {
+        let output = r#"{"file_path": "/src/lib.rs", "startLine": 1, "numLines": 2, "totalLines": 100, "content": "fn foo() {}"}"#;
+        let result = format_tool_result("read_file", output, false);
+        assert!(result.contains("/src/lib.rs"));
+        assert!(result.contains("fn foo() {}"));
+    }
+
+    // ── format_write_result ──────────────────────────────────────────────────
+
+    #[test]
+    fn format_tool_result_write_shows_path() {
+        let output = r#"{"file_path": "/out.txt", "type": "create", "content": "a\nb\nc"}"#;
+        let result = format_tool_result("write_file", output, false);
+        assert!(result.contains("/out.txt"));
+        assert!(result.contains("3 lines"));
+    }
+
+    #[test]
+    fn format_tool_result_write_updated_type() {
+        let output = r#"{"file_path": "/file.rs", "type": "update", "content": "x"}"#;
+        let result = format_tool_result("write_file", output, false);
+        assert!(result.contains("Updated"));
+    }
+
+    // ── format_glob_result ───────────────────────────────────────────────────
+
+    #[test]
+    fn format_glob_result_no_files() {
+        let parsed = serde_json::json!({"numFiles": 0});
+        let result = format_glob_result("✓", &parsed);
+        assert!(result.contains("0 files"));
+    }
+
+    #[test]
+    fn format_glob_result_with_filenames() {
+        let parsed = serde_json::json!({
+            "numFiles": 2,
+            "filenames": ["src/a.rs", "src/b.rs"]
+        });
+        let result = format_glob_result("✓", &parsed);
+        assert!(result.contains("src/a.rs"));
+        assert!(result.contains("src/b.rs"));
+        assert!(result.contains("2 files"));
+    }
+
+    // ── format_grep_result ───────────────────────────────────────────────────
+
+    #[test]
+    fn format_grep_result_shows_match_counts() {
+        let parsed = serde_json::json!({
+            "numMatches": 3,
+            "numFiles": 2,
+            "content": ""
+        });
+        let result = format_grep_result("✓", &parsed);
+        assert!(result.contains("3 matches"));
+        assert!(result.contains("2 files"));
+    }
+
+    #[test]
+    fn format_grep_result_with_content() {
+        let parsed = serde_json::json!({
+            "numMatches": 1,
+            "numFiles": 1,
+            "content": "src/main.rs:10: fn main() {}"
+        });
+        let result = format_grep_result("✓", &parsed);
+        assert!(result.contains("fn main()"));
+    }
+
+    #[test]
+    fn format_grep_result_with_filenames_no_content() {
+        let parsed = serde_json::json!({
+            "numMatches": 1,
+            "numFiles": 1,
+            "filenames": ["src/main.rs"]
+        });
+        let result = format_grep_result("✓", &parsed);
+        assert!(result.contains("src/main.rs"));
+    }
+
+    // ── format_generic_tool_result ───────────────────────────────────────────
+
+    #[test]
+    fn format_generic_tool_result_string_output() {
+        let parsed = serde_json::Value::String("hello".to_string());
+        let result = format_generic_tool_result("✓", "my_tool", &parsed);
+        assert!(result.contains("my_tool"));
+        assert!(result.contains("hello"));
+    }
+
+    #[test]
+    fn format_generic_tool_result_null_output() {
+        let parsed = serde_json::Value::Null;
+        let result = format_generic_tool_result("✓", "my_tool", &parsed);
+        assert!(result.contains("my_tool"));
+    }
+
+    #[test]
+    fn format_generic_tool_result_object_output() {
+        let parsed = serde_json::json!({"key": "value"});
+        let result = format_generic_tool_result("✓", "my_tool", &parsed);
+        assert!(result.contains("my_tool"));
+        assert!(result.contains("key"));
+    }
+
+    #[test]
+    fn format_generic_tool_result_multiline_output() {
+        let parsed = serde_json::Value::String("line1\nline2".to_string());
+        let result = format_generic_tool_result("✓", "my_tool", &parsed);
+        // multiline → newline between name and content
+        assert!(result.contains('\n'));
+    }
+}
