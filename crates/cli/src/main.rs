@@ -43,22 +43,11 @@ use session_management::{
     resolve_session_reference, LATEST_SESSION_REFERENCE, PRIMARY_SESSION_EXTENSION,
 };
 
-#[cfg(test)]
-use reports::format_unknown_slash_command_message;
 // Re-export items needed by inline tests via `super::`.
 #[cfg(test)]
-use arg_parsing::{
-    resolve_model_alias, slash_command_completion_candidates_with_sessions, CliOutputFormat,
-};
+use arg_parsing::{resolve_model_alias, CliOutputFormat};
 #[cfg(test)]
-use reports::{
-    format_bughunter_report, format_commit_preflight_report, format_commit_skipped_report,
-    format_issue_report, format_model_report, format_model_switch_report,
-    format_permissions_report, format_permissions_switch_report, format_pr_report,
-    format_resume_report, format_ultraplan_report, normalize_permission_mode,
-    parse_git_status_branch, parse_git_workspace_summary, render_diff_report, render_resume_usage,
-    validate_no_args,
-};
+use reports::render_diff_report;
 #[cfg(test)]
 use session_management::create_managed_session_handle;
 
@@ -537,39 +526,20 @@ fn print_help() {
 #[cfg(test)]
 mod tests {
     use super::{
-        create_managed_session_handle, format_bughunter_report, format_commit_preflight_report,
-        format_commit_skipped_report, format_compact_report, format_cost_report,
-        format_issue_report, format_model_report, format_model_switch_report,
-        format_permissions_report, format_permissions_switch_report, format_pr_report,
-        format_resume_report, format_status_report, format_ultraplan_report,
-        format_unknown_slash_command, format_unknown_slash_command_message,
-        normalize_permission_mode, parse_args, parse_git_status_branch,
-        parse_git_workspace_summary, print_help_to, render_config_report, render_diff_report,
-        render_memory_report, render_repl_help, render_resume_usage, resolve_model_alias,
-        resolve_session_reference, resume_supported_slash_commands, run_resume_command,
-        slash_command_completion_candidates_with_sessions, status_context, validate_no_args,
-        CliAction, CliOutputFormat, LiveCli, SlashCommand, StatusUsage,
+        create_managed_session_handle, parse_args, print_help_to, render_diff_report,
+        resolve_model_alias, resolve_session_reference, run_resume_command, CliAction,
+        CliOutputFormat, LiveCli, SlashCommand,
     };
     use crate::arg_parsing::filter_tool_specs;
     use crate::arg_parsing::DEFAULT_MODEL;
-    use crate::reports::{parse_git_status_metadata_for, GitWorkspaceSummary};
     use crate::runtime_build::{
         build_runtime_plugin_state_with_loader, build_runtime_with_plugin_state, permission_policy,
     };
-    use crate::streaming::{
-        describe_tool_progress, format_internal_prompt_progress_line, push_output_block,
-        response_to_events, InternalPromptProgressEvent, InternalPromptProgressState,
-    };
-    use crate::tool_display::{format_tool_call_start, format_tool_result};
-    use colotcook_api::{MessageResponse, OutputContentBlock, Usage};
     use colotcook_plugins::{
         PluginManager, PluginManagerConfig, PluginTool, PluginToolDefinition, PluginToolPermission,
     };
     use colotcook_runtime as runtime;
-    use colotcook_runtime::{
-        AssistantEvent, ConfigLoader, ContentBlock, ConversationMessage, McpServerManager,
-        MessageRole, PermissionMode, Session,
-    };
+    use colotcook_runtime::{ConfigLoader, McpServerManager, PermissionMode, Session};
     use colotcook_tools::GlobalToolRegistry;
     use serde_json::json;
     use std::fs;
@@ -960,14 +930,6 @@ mod tests {
     }
 
     #[test]
-    fn formats_unknown_slash_command_with_suggestions() {
-        let report = format_unknown_slash_command_message("stats");
-        assert!(report.contains("unknown slash command: /stats"));
-        assert!(report.contains("Did you mean /status?"));
-        assert!(report.contains("Use /help"));
-    }
-
-    #[test]
     fn parses_resume_flag_with_slash_command() {
         let args = vec![
             "--resume".to_string(),
@@ -1111,57 +1073,18 @@ mod tests {
     }
 
     #[test]
-    fn shared_help_uses_resume_annotation_copy() {
-        let help = colotcook_commands::render_slash_command_help();
-        assert!(help.contains("Slash commands"));
-        assert!(help.contains("works with --resume SESSION.jsonl"));
-    }
-
-    #[test]
-    fn repl_help_includes_shared_commands_and_exit() {
-        let help = render_repl_help();
-        assert!(help.contains("REPL"));
-        assert!(help.contains("/help"));
-        assert!(help.contains("Complete commands, modes, and recent sessions"));
-        assert!(help.contains("/status"));
-        assert!(help.contains("/sandbox"));
-        assert!(help.contains("/model [model]"));
-        assert!(help.contains("/permissions [read-only|workspace-write|danger-full-access]"));
-        assert!(help.contains("/clear [--confirm]"));
-        assert!(help.contains("/cost"));
-        assert!(help.contains("/resume <session-path>"));
-        assert!(help.contains("/config [env|hooks|model|plugins]"));
-        assert!(help.contains("/memory"));
-        assert!(help.contains("/init"));
-        assert!(help.contains("/diff"));
-        assert!(help.contains("/version"));
-        assert!(help.contains("/export [file]"));
-        assert!(help.contains("/session [list|switch <session-id>|fork [branch-name]]"));
-        assert!(help.contains(
-            "/plugin [list|install <path>|enable <name>|disable <name>|uninstall <id>|update <id>]"
-        ));
-        assert!(help.contains("aliases: /plugins, /marketplace"));
-        assert!(help.contains("/agents"));
-        assert!(help.contains("/skills"));
-        assert!(help.contains("/exit"));
-        assert!(help.contains("Auto-save            .colotcook/sessions/<session-id>.jsonl"));
-        assert!(help.contains("Resume latest        /resume latest"));
-    }
-
-    #[test]
-    fn completion_candidates_include_workflow_shortcuts_and_dynamic_sessions() {
-        let completions = slash_command_completion_candidates_with_sessions(
-            "sonnet",
-            Some("session-current"),
-            vec!["session-old".to_string()],
-        );
-
-        assert!(completions.contains(&"/model claude-sonnet-4-6".to_string()));
-        assert!(completions.contains(&"/permissions workspace-write".to_string()));
-        assert!(completions.contains(&"/session list".to_string()));
-        assert!(completions.contains(&"/session switch session-current".to_string()));
-        assert!(completions.contains(&"/resume session-old".to_string()));
-        assert!(completions.contains(&"/ultraplan ".to_string()));
+    fn init_help_mentions_direct_subcommand() {
+        let mut help = Vec::new();
+        print_help_to(&mut help).expect("help should render");
+        let help = String::from_utf8(help).expect("help should be utf8");
+        assert!(help.contains("colotcook help"));
+        assert!(help.contains("colotcook version"));
+        assert!(help.contains("colotcook status"));
+        assert!(help.contains("colotcook sandbox"));
+        assert!(help.contains("colotcook init"));
+        assert!(help.contains("colotcook agents"));
+        assert!(help.contains("colotcook skills"));
+        assert!(help.contains("colotcook /skills"));
     }
 
     #[test]
@@ -1186,311 +1109,6 @@ mod tests {
         assert!(banner.contains("workflow completions"));
 
         fs::remove_dir_all(root).expect("cleanup temp dir");
-    }
-
-    #[test]
-    fn resume_supported_command_list_matches_expected_surface() {
-        let names = resume_supported_slash_commands()
-            .into_iter()
-            .map(|spec| spec.name)
-            .collect::<Vec<_>>();
-        assert_eq!(
-            names,
-            vec![
-                "help", "status", "sandbox", "compact", "clear", "cost", "config", "memory",
-                "init", "diff", "version", "export", "agents", "skills",
-            ]
-        );
-    }
-
-    #[test]
-    fn resume_report_uses_sectioned_layout() {
-        let report = format_resume_report("session.jsonl", 14, 6);
-        assert!(report.contains("Session resumed"));
-        assert!(report.contains("Session file     session.jsonl"));
-        assert!(report.contains("Messages         14"));
-        assert!(report.contains("Turns            6"));
-    }
-
-    #[test]
-    fn compact_report_uses_structured_output() {
-        let compacted = format_compact_report(8, 5, false);
-        assert!(compacted.contains("Compact"));
-        assert!(compacted.contains("Result           compacted"));
-        assert!(compacted.contains("Messages removed 8"));
-        let skipped = format_compact_report(0, 3, true);
-        assert!(skipped.contains("Result           skipped"));
-    }
-
-    #[test]
-    fn cost_report_uses_sectioned_layout() {
-        let report = format_cost_report(runtime::TokenUsage {
-            input_tokens: 20,
-            output_tokens: 8,
-            cache_creation_input_tokens: 3,
-            cache_read_input_tokens: 1,
-        });
-        assert!(report.contains("Cost"));
-        assert!(report.contains("Input tokens     20"));
-        assert!(report.contains("Output tokens    8"));
-        assert!(report.contains("Cache create     3"));
-        assert!(report.contains("Cache read       1"));
-        assert!(report.contains("Total tokens     32"));
-    }
-
-    #[test]
-    fn permissions_report_uses_sectioned_layout() {
-        let report = format_permissions_report("workspace-write");
-        assert!(report.contains("Permissions"));
-        assert!(report.contains("Active mode      workspace-write"));
-        assert!(report.contains("Modes"));
-        assert!(report.contains("read-only          ○ available Read/search tools only"));
-        assert!(report.contains("workspace-write    ● current   Edit files inside the workspace"));
-        assert!(report.contains("danger-full-access ○ available Unrestricted tool access"));
-    }
-
-    #[test]
-    fn permissions_switch_report_is_structured() {
-        let report = format_permissions_switch_report("read-only", "workspace-write");
-        assert!(report.contains("Permissions updated"));
-        assert!(report.contains("Result           mode switched"));
-        assert!(report.contains("Previous mode    read-only"));
-        assert!(report.contains("Active mode      workspace-write"));
-        assert!(report.contains("Applies to       subsequent tool calls"));
-    }
-
-    #[test]
-    fn init_help_mentions_direct_subcommand() {
-        let mut help = Vec::new();
-        print_help_to(&mut help).expect("help should render");
-        let help = String::from_utf8(help).expect("help should be utf8");
-        assert!(help.contains("colotcook help"));
-        assert!(help.contains("colotcook version"));
-        assert!(help.contains("colotcook status"));
-        assert!(help.contains("colotcook sandbox"));
-        assert!(help.contains("colotcook init"));
-        assert!(help.contains("colotcook agents"));
-        assert!(help.contains("colotcook skills"));
-        assert!(help.contains("colotcook /skills"));
-    }
-
-    #[test]
-    fn model_report_uses_sectioned_layout() {
-        let report = format_model_report("claude-sonnet", 12, 4);
-        assert!(report.contains("Model"));
-        assert!(report.contains("Current model    claude-sonnet"));
-        assert!(report.contains("Session messages 12"));
-        assert!(report.contains("Switch models with /model <name>"));
-    }
-
-    #[test]
-    fn model_switch_report_preserves_context_summary() {
-        let report = format_model_switch_report("claude-sonnet", "claude-opus", 9);
-        assert!(report.contains("Model updated"));
-        assert!(report.contains("Previous         claude-sonnet"));
-        assert!(report.contains("Current          claude-opus"));
-        assert!(report.contains("Preserved msgs   9"));
-    }
-
-    #[test]
-    fn status_line_reports_model_and_token_totals() {
-        let status = format_status_report(
-            "claude-sonnet",
-            StatusUsage {
-                message_count: 7,
-                turns: 3,
-                latest: runtime::TokenUsage {
-                    input_tokens: 5,
-                    output_tokens: 4,
-                    cache_creation_input_tokens: 1,
-                    cache_read_input_tokens: 0,
-                },
-                cumulative: runtime::TokenUsage {
-                    input_tokens: 20,
-                    output_tokens: 8,
-                    cache_creation_input_tokens: 2,
-                    cache_read_input_tokens: 1,
-                },
-                estimated_tokens: 128,
-            },
-            "workspace-write",
-            &crate::reports::StatusContext {
-                cwd: PathBuf::from("/tmp/project"),
-                session_path: Some(PathBuf::from("session.jsonl")),
-                loaded_config_files: 2,
-                discovered_config_files: 3,
-                memory_file_count: 4,
-                project_root: Some(PathBuf::from("/tmp")),
-                git_branch: Some("main".to_string()),
-                git_summary: GitWorkspaceSummary {
-                    changed_files: 3,
-                    staged_files: 1,
-                    unstaged_files: 1,
-                    untracked_files: 1,
-                    conflicted_files: 0,
-                },
-                sandbox_status: runtime::SandboxStatus::default(),
-            },
-        );
-        assert!(status.contains("Status"));
-        assert!(status.contains("Model            claude-sonnet"));
-        assert!(status.contains("Permission mode  workspace-write"));
-        assert!(status.contains("Messages         7"));
-        assert!(status.contains("Latest total     10"));
-        assert!(status.contains("Cumulative total 31"));
-        assert!(status.contains("Cwd              /tmp/project"));
-        assert!(status.contains("Project root     /tmp"));
-        assert!(status.contains("Git branch       main"));
-        assert!(
-            status.contains("Git state        dirty · 3 files · 1 staged, 1 unstaged, 1 untracked")
-        );
-        assert!(status.contains("Changed files    3"));
-        assert!(status.contains("Staged           1"));
-        assert!(status.contains("Unstaged         1"));
-        assert!(status.contains("Untracked        1"));
-        assert!(status.contains("Session          session.jsonl"));
-        assert!(status.contains("Config files     loaded 2/3"));
-        assert!(status.contains("Memory files     4"));
-        assert!(status.contains("Suggested flow   /status → /diff → /commit"));
-    }
-
-    #[test]
-    fn commit_reports_surface_workspace_context() {
-        let summary = GitWorkspaceSummary {
-            changed_files: 2,
-            staged_files: 1,
-            unstaged_files: 1,
-            untracked_files: 0,
-            conflicted_files: 0,
-        };
-
-        let preflight = format_commit_preflight_report(Some("feature/ux"), summary);
-        assert!(preflight.contains("Result           ready"));
-        assert!(preflight.contains("Branch           feature/ux"));
-        assert!(preflight.contains("Workspace        dirty · 2 files · 1 staged, 1 unstaged"));
-        assert!(preflight
-            .contains("Action           create a git commit from the current workspace changes"));
-    }
-
-    #[test]
-    fn commit_skipped_report_points_to_next_steps() {
-        let report = format_commit_skipped_report();
-        assert!(report.contains("Reason           no workspace changes"));
-        assert!(report
-            .contains("Action           create a git commit from the current workspace changes"));
-        assert!(report.contains("/status to inspect context"));
-        assert!(report.contains("/diff to inspect repo changes"));
-    }
-
-    #[test]
-    fn runtime_slash_reports_describe_command_behavior() {
-        let bughunter = format_bughunter_report(Some("runtime"));
-        assert!(bughunter.contains("Scope            runtime"));
-        assert!(bughunter.contains("inspect the selected code for likely bugs"));
-
-        let ultraplan = format_ultraplan_report(Some("ship the release"));
-        assert!(ultraplan.contains("Task             ship the release"));
-        assert!(ultraplan.contains("break work into a multi-step execution plan"));
-
-        let pr = format_pr_report("feature/ux", Some("ready for review"));
-        assert!(pr.contains("Branch           feature/ux"));
-        assert!(pr.contains("draft or create a pull request"));
-
-        let issue = format_issue_report(Some("flaky test"));
-        assert!(issue.contains("Context          flaky test"));
-        assert!(issue.contains("draft or create a GitHub issue"));
-    }
-
-    #[test]
-    fn no_arg_commands_reject_unexpected_arguments() {
-        assert!(validate_no_args("/commit", None).is_ok());
-
-        let error = validate_no_args("/commit", Some("now"))
-            .expect_err("unexpected arguments should fail")
-            .to_string();
-        assert!(error.contains("/commit does not accept arguments"));
-        assert!(error.contains("Received: now"));
-    }
-
-    #[test]
-    fn config_report_supports_section_views() {
-        let report = render_config_report(Some("env")).expect("config report should render");
-        assert!(report.contains("Merged section: env"));
-        let plugins_report =
-            render_config_report(Some("plugins")).expect("plugins config report should render");
-        assert!(plugins_report.contains("Merged section: plugins"));
-    }
-
-    #[test]
-    fn memory_report_uses_sectioned_layout() {
-        let report = render_memory_report().expect("memory report should render");
-        assert!(report.contains("Memory"));
-        assert!(report.contains("Working directory"));
-        assert!(report.contains("Instruction files"));
-        assert!(report.contains("Discovered files"));
-    }
-
-    #[test]
-    fn config_report_uses_sectioned_layout() {
-        let report = render_config_report(None).expect("config report should render");
-        assert!(report.contains("Config"));
-        assert!(report.contains("Discovered files"));
-        assert!(report.contains("Merged JSON"));
-    }
-
-    #[test]
-    fn parses_git_status_metadata() {
-        let _guard = env_lock();
-        let temp_root = temp_dir();
-        fs::create_dir_all(&temp_root).expect("root dir");
-        let (project_root, branch) = parse_git_status_metadata_for(
-            &temp_root,
-            Some(
-                "## rcc/cli...origin/rcc/cli
- M src/main.rs",
-            ),
-        );
-        assert_eq!(branch.as_deref(), Some("rcc/cli"));
-        assert!(project_root.is_none());
-        fs::remove_dir_all(temp_root).expect("cleanup temp dir");
-    }
-
-    #[test]
-    fn parses_detached_head_from_status_snapshot() {
-        let _guard = env_lock();
-        assert_eq!(
-            parse_git_status_branch(Some(
-                "## HEAD (no branch)
- M src/main.rs"
-            )),
-            Some("detached HEAD".to_string())
-        );
-    }
-
-    #[test]
-    fn parses_git_workspace_summary_counts() {
-        let summary = parse_git_workspace_summary(Some(
-            "## feature/ux
-M  src/main.rs
- M README.md
-?? notes.md
-UU conflicted.rs",
-        ));
-
-        assert_eq!(
-            summary,
-            GitWorkspaceSummary {
-                changed_files: 4,
-                staged_files: 2,
-                unstaged_files: 2,
-                untracked_files: 1,
-                conflicted_files: 1,
-            }
-        );
-        assert_eq!(
-            summary.headline(),
-            "dirty · 4 files · 2 staged, 2 unstaged, 1 untracked, 1 conflicted"
-        );
     }
 
     #[test]
@@ -1594,28 +1212,6 @@ UU conflicted.rs",
         assert!(message.contains("tracked.txt"));
 
         fs::remove_dir_all(root).expect("cleanup temp dir");
-    }
-
-    #[test]
-    fn status_context_reads_real_workspace_metadata() {
-        let context = status_context(None).expect("status context should load");
-        assert!(context.cwd.is_absolute());
-        assert!(context.discovered_config_files >= context.loaded_config_files);
-        assert!(context.loaded_config_files <= context.discovered_config_files);
-    }
-
-    #[test]
-    fn normalizes_supported_permission_modes() {
-        assert_eq!(normalize_permission_mode("read-only"), Some("read-only"));
-        assert_eq!(
-            normalize_permission_mode("workspace-write"),
-            Some("workspace-write")
-        );
-        assert_eq!(
-            normalize_permission_mode("danger-full-access"),
-            Some("danger-full-access")
-        );
-        assert_eq!(normalize_permission_mode("unknown"), None);
     }
 
     #[test]
@@ -1748,22 +1344,6 @@ UU conflicted.rs",
         std::fs::remove_dir_all(workspace).expect("workspace should clean up");
     }
 
-    #[test]
-    fn unknown_slash_command_guidance_suggests_nearby_commands() {
-        let message = format_unknown_slash_command("stats");
-        assert!(message.contains("Unknown slash command: /stats"));
-        assert!(message.contains("/status"));
-        assert!(message.contains("/help"));
-    }
-
-    #[test]
-    fn resume_usage_mentions_latest_shortcut() {
-        let usage = render_resume_usage();
-        assert!(usage.contains("/resume <session-path|session-id|latest>"));
-        assert!(usage.contains(".colotcook/sessions/<session-id>.jsonl"));
-        assert!(usage.contains("/session list"));
-    }
-
     fn cwd_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
@@ -1775,370 +1355,6 @@ UU conflicted.rs",
             .expect("system time should be after epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("colotcook-cli-{label}-{nanos}"))
-    }
-
-    #[test]
-    fn init_template_mentions_detected_rust_workspace() {
-        let rendered = crate::init::render_init_claude_md(std::path::Path::new("."));
-        assert!(rendered.contains("# CLAUDE.md"));
-        assert!(rendered.contains("cargo clippy --workspace --all-targets -- -D warnings"));
-    }
-
-    #[test]
-    fn converts_tool_roundtrip_messages() {
-        use crate::streaming::convert_messages;
-        let messages = vec![
-            ConversationMessage::user_text("hello"),
-            ConversationMessage::assistant(vec![ContentBlock::ToolUse {
-                id: "tool-1".to_string(),
-                name: "bash".to_string(),
-                input: "{\"command\":\"pwd\"}".to_string(),
-            }]),
-            ConversationMessage {
-                role: MessageRole::Tool,
-                blocks: vec![ContentBlock::ToolResult {
-                    tool_use_id: "tool-1".to_string(),
-                    tool_name: "bash".to_string(),
-                    output: "ok".to_string(),
-                    is_error: false,
-                }],
-                usage: None,
-            },
-        ];
-
-        let converted = convert_messages(&messages);
-        assert_eq!(converted.len(), 3);
-        assert_eq!(converted[1].role, "assistant");
-        assert_eq!(converted[2].role, "user");
-    }
-    #[test]
-    fn repl_help_mentions_history_completion_and_multiline() {
-        let help = render_repl_help();
-        assert!(help.contains("Up/Down"));
-        assert!(help.contains("Tab"));
-        assert!(help.contains("Shift+Enter/Ctrl+J"));
-    }
-
-    #[test]
-    fn tool_rendering_helpers_compact_output() {
-        let start = format_tool_call_start("read_file", r#"{"path":"src/main.rs"}"#);
-        assert!(start.contains("read_file"));
-        assert!(start.contains("src/main.rs"));
-
-        let done = format_tool_result(
-            "read_file",
-            r#"{"file":{"filePath":"src/main.rs","content":"hello","numLines":1,"startLine":1,"totalLines":1}}"#,
-            false,
-        );
-        assert!(done.contains("📄 Read src/main.rs"));
-        assert!(done.contains("hello"));
-    }
-
-    #[test]
-    fn tool_rendering_truncates_large_read_output_for_display_only() {
-        let content = (0..200)
-            .map(|index| format!("line {index:03}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let output = json!({
-            "file": {
-                "filePath": "src/main.rs",
-                "content": content,
-                "numLines": 200,
-                "startLine": 1,
-                "totalLines": 200
-            }
-        })
-        .to_string();
-
-        let rendered = format_tool_result("read_file", &output, false);
-
-        assert!(rendered.contains("line 000"));
-        assert!(rendered.contains("line 079"));
-        assert!(!rendered.contains("line 199"));
-        assert!(rendered.contains("full result preserved in session"));
-        assert!(output.contains("line 199"));
-    }
-
-    #[test]
-    fn tool_rendering_truncates_large_bash_output_for_display_only() {
-        let stdout = (0..120)
-            .map(|index| format!("stdout {index:03}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let output = json!({
-            "stdout": stdout,
-            "stderr": "",
-            "returnCodeInterpretation": "completed successfully"
-        })
-        .to_string();
-
-        let rendered = format_tool_result("bash", &output, false);
-
-        assert!(rendered.contains("stdout 000"));
-        assert!(rendered.contains("stdout 059"));
-        assert!(!rendered.contains("stdout 119"));
-        assert!(rendered.contains("full result preserved in session"));
-        assert!(output.contains("stdout 119"));
-    }
-
-    #[test]
-    fn tool_rendering_truncates_generic_long_output_for_display_only() {
-        let items = (0..120)
-            .map(|index| format!("payload {index:03}"))
-            .collect::<Vec<_>>();
-        let output = json!({
-            "summary": "plugin payload",
-            "items": items,
-        })
-        .to_string();
-
-        let rendered = format_tool_result("plugin_echo", &output, false);
-
-        assert!(rendered.contains("plugin_echo"));
-        assert!(rendered.contains("payload 000"));
-        assert!(rendered.contains("payload 040"));
-        assert!(!rendered.contains("payload 080"));
-        assert!(!rendered.contains("payload 119"));
-        assert!(rendered.contains("full result preserved in session"));
-        assert!(output.contains("payload 119"));
-    }
-
-    #[test]
-    fn tool_rendering_truncates_raw_generic_output_for_display_only() {
-        let output = (0..120)
-            .map(|index| format!("raw {index:03}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let rendered = format_tool_result("plugin_echo", &output, false);
-
-        assert!(rendered.contains("plugin_echo"));
-        assert!(rendered.contains("raw 000"));
-        assert!(rendered.contains("raw 059"));
-        assert!(!rendered.contains("raw 119"));
-        assert!(rendered.contains("full result preserved in session"));
-        assert!(output.contains("raw 119"));
-    }
-
-    #[test]
-    fn ultraplan_progress_lines_include_phase_step_and_elapsed_status() {
-        let snapshot = InternalPromptProgressState {
-            command_label: "Ultraplan",
-            task_label: "ship plugin progress".to_string(),
-            step: 3,
-            phase: "running read_file".to_string(),
-            detail: Some("reading rust/crates/cli/src/main.rs".to_string()),
-            saw_final_text: false,
-        };
-
-        let started = format_internal_prompt_progress_line(
-            InternalPromptProgressEvent::Started,
-            &snapshot,
-            Duration::from_secs(0),
-            None,
-        );
-        let heartbeat = format_internal_prompt_progress_line(
-            InternalPromptProgressEvent::Heartbeat,
-            &snapshot,
-            Duration::from_secs(9),
-            None,
-        );
-        let completed = format_internal_prompt_progress_line(
-            InternalPromptProgressEvent::Complete,
-            &snapshot,
-            Duration::from_secs(12),
-            None,
-        );
-        let failed = format_internal_prompt_progress_line(
-            InternalPromptProgressEvent::Failed,
-            &snapshot,
-            Duration::from_secs(12),
-            Some("network timeout"),
-        );
-
-        assert!(started.contains("planning started"));
-        assert!(started.contains("current step 3"));
-        assert!(heartbeat.contains("heartbeat"));
-        assert!(heartbeat.contains("9s elapsed"));
-        assert!(heartbeat.contains("phase running read_file"));
-        assert!(completed.contains("completed"));
-        assert!(completed.contains("3 steps total"));
-        assert!(failed.contains("failed"));
-        assert!(failed.contains("network timeout"));
-    }
-
-    #[test]
-    fn describe_tool_progress_summarizes_known_tools() {
-        assert_eq!(
-            describe_tool_progress("read_file", r#"{"path":"src/main.rs"}"#),
-            "reading src/main.rs"
-        );
-        assert!(
-            describe_tool_progress("bash", r#"{"command":"cargo test -p colotcook-cli"}"#)
-                .contains("cargo test -p colotcook-cli")
-        );
-        assert_eq!(
-            describe_tool_progress("grep_search", r#"{"pattern":"ultraplan","path":"rust"}"#),
-            "grep `ultraplan` in rust"
-        );
-    }
-
-    #[test]
-    fn push_output_block_renders_markdown_text() {
-        let mut out = Vec::new();
-        let mut events = Vec::new();
-        let mut pending_tool = None;
-
-        push_output_block(
-            OutputContentBlock::Text {
-                text: "# Heading".to_string(),
-            },
-            &mut out,
-            &mut events,
-            &mut pending_tool,
-            false,
-        )
-        .expect("text block should render");
-
-        let rendered = String::from_utf8(out).expect("utf8");
-        assert!(rendered.contains("Heading"));
-        assert!(rendered.contains('\u{1b}'));
-    }
-
-    #[test]
-    fn push_output_block_skips_empty_object_prefix_for_tool_streams() {
-        let mut out = Vec::new();
-        let mut events = Vec::new();
-        let mut pending_tool = None;
-
-        push_output_block(
-            OutputContentBlock::ToolUse {
-                id: "tool-1".to_string(),
-                name: "read_file".to_string(),
-                input: json!({}),
-            },
-            &mut out,
-            &mut events,
-            &mut pending_tool,
-            true,
-        )
-        .expect("tool block should accumulate");
-
-        assert!(events.is_empty());
-        assert_eq!(
-            pending_tool,
-            Some(("tool-1".to_string(), "read_file".to_string(), String::new(),))
-        );
-    }
-
-    #[test]
-    fn response_to_events_preserves_empty_object_json_input_outside_streaming() {
-        let mut out = Vec::new();
-        let events = response_to_events(
-            MessageResponse {
-                id: "msg-1".to_string(),
-                kind: "message".to_string(),
-                model: "claude-opus-4-6".to_string(),
-                role: "assistant".to_string(),
-                content: vec![OutputContentBlock::ToolUse {
-                    id: "tool-1".to_string(),
-                    name: "read_file".to_string(),
-                    input: json!({}),
-                }],
-                stop_reason: Some("tool_use".to_string()),
-                stop_sequence: None,
-                usage: Usage {
-                    input_tokens: 1,
-                    output_tokens: 1,
-                    cache_creation_input_tokens: 0,
-                    cache_read_input_tokens: 0,
-                },
-                request_id: None,
-            },
-            &mut out,
-        )
-        .expect("response conversion should succeed");
-
-        assert!(matches!(
-            &events[0],
-            AssistantEvent::ToolUse { name, input, .. }
-                if name == "read_file" && input == "{}"
-        ));
-    }
-
-    #[test]
-    fn response_to_events_preserves_non_empty_json_input_outside_streaming() {
-        let mut out = Vec::new();
-        let events = response_to_events(
-            MessageResponse {
-                id: "msg-2".to_string(),
-                kind: "message".to_string(),
-                model: "claude-opus-4-6".to_string(),
-                role: "assistant".to_string(),
-                content: vec![OutputContentBlock::ToolUse {
-                    id: "tool-2".to_string(),
-                    name: "read_file".to_string(),
-                    input: json!({ "path": "rust/Cargo.toml" }),
-                }],
-                stop_reason: Some("tool_use".to_string()),
-                stop_sequence: None,
-                usage: Usage {
-                    input_tokens: 1,
-                    output_tokens: 1,
-                    cache_creation_input_tokens: 0,
-                    cache_read_input_tokens: 0,
-                },
-                request_id: None,
-            },
-            &mut out,
-        )
-        .expect("response conversion should succeed");
-
-        assert!(matches!(
-            &events[0],
-            AssistantEvent::ToolUse { name, input, .. }
-                if name == "read_file" && input == "{\"path\":\"rust/Cargo.toml\"}"
-        ));
-    }
-
-    #[test]
-    fn response_to_events_ignores_thinking_blocks() {
-        let mut out = Vec::new();
-        let events = response_to_events(
-            MessageResponse {
-                id: "msg-3".to_string(),
-                kind: "message".to_string(),
-                model: "claude-opus-4-6".to_string(),
-                role: "assistant".to_string(),
-                content: vec![
-                    OutputContentBlock::Thinking {
-                        thinking: "step 1".to_string(),
-                        signature: Some("sig_123".to_string()),
-                    },
-                    OutputContentBlock::Text {
-                        text: "Final answer".to_string(),
-                    },
-                ],
-                stop_reason: Some("end_turn".to_string()),
-                stop_sequence: None,
-                usage: Usage {
-                    input_tokens: 1,
-                    output_tokens: 1,
-                    cache_creation_input_tokens: 0,
-                    cache_read_input_tokens: 0,
-                },
-                request_id: None,
-            },
-            &mut out,
-        )
-        .expect("response conversion should succeed");
-
-        assert!(matches!(
-            &events[0],
-            AssistantEvent::TextDelta(text) if text == "Final answer"
-        ));
-        assert!(!String::from_utf8(out).expect("utf8").contains("step 1"));
     }
 
     #[test]
@@ -2244,11 +1460,7 @@ UU conflicted.rs",
 #[cfg(test)]
 mod sandbox_report_tests {
     use super::format_sandbox_report;
-    use crate::runtime_build::HookAbortMonitor;
     use colotcook_runtime as runtime;
-    use colotcook_runtime::HookAbortSignal;
-    use std::sync::mpsc;
-    use std::time::Duration;
 
     #[test]
     fn sandbox_report_renders_expected_fields() {
@@ -2257,45 +1469,6 @@ mod sandbox_report_tests {
         assert!(report.contains("Enabled"));
         assert!(report.contains("Filesystem mode"));
         assert!(report.contains("Fallback reason"));
-    }
-
-    #[test]
-    fn hook_abort_monitor_stops_without_aborting() {
-        let abort_signal = HookAbortSignal::new();
-        let (ready_tx, ready_rx) = mpsc::channel();
-        let monitor = HookAbortMonitor::spawn_with_waiter(
-            abort_signal.clone(),
-            move |stop_rx, abort_signal| {
-                ready_tx.send(()).expect("ready signal");
-                let _ = stop_rx.recv();
-                assert!(!abort_signal.is_aborted());
-            },
-        );
-
-        ready_rx.recv().expect("waiter should be ready");
-        monitor.stop();
-
-        assert!(!abort_signal.is_aborted());
-    }
-
-    #[test]
-    fn hook_abort_monitor_propagates_interrupt() {
-        let abort_signal = HookAbortSignal::new();
-        let (done_tx, done_rx) = mpsc::channel();
-        let monitor = HookAbortMonitor::spawn_with_waiter(
-            abort_signal.clone(),
-            move |_stop_rx, abort_signal| {
-                abort_signal.abort();
-                done_tx.send(()).expect("done signal");
-            },
-        );
-
-        done_rx
-            .recv_timeout(Duration::from_secs(1))
-            .expect("interrupt should complete");
-        monitor.stop();
-
-        assert!(abort_signal.is_aborted());
     }
 
     #[test]

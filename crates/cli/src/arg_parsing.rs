@@ -1182,4 +1182,52 @@ mod tests {
         // Should return something (all commands)
         assert!(!suggestions.is_empty());
     }
+
+    // -- Tests migrated from main.rs ------------------------------------------
+
+    #[test]
+    fn completion_candidates_include_workflow_shortcuts_and_dynamic_sessions() {
+        let completions = slash_command_completion_candidates_with_sessions(
+            "sonnet",
+            Some("session-current"),
+            vec!["session-old".to_string()],
+        );
+
+        assert!(completions.contains(&"/model claude-sonnet-4-6".to_string()));
+        assert!(completions.contains(&"/permissions workspace-write".to_string()));
+        assert!(completions.contains(&"/session list".to_string()));
+        assert!(completions.contains(&"/session switch session-current".to_string()));
+        assert!(completions.contains(&"/resume session-old".to_string()));
+        assert!(completions.contains(&"/ultraplan ".to_string()));
+    }
+
+    #[test]
+    fn resume_supported_command_list_matches_expected_surface() {
+        let names = colotcook_commands::resume_supported_slash_commands()
+            .into_iter()
+            .map(|spec| spec.name)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            vec![
+                "help", "status", "sandbox", "compact", "clear", "cost", "config", "memory",
+                "init", "diff", "version", "export", "agents", "skills",
+            ]
+        );
+    }
+
+    #[test]
+    fn shared_help_uses_resume_annotation_copy() {
+        let help = colotcook_commands::render_slash_command_help();
+        assert!(help.contains("Slash commands"));
+        assert!(help.contains("works with --resume SESSION.jsonl"));
+    }
+
+    #[test]
+    fn unknown_slash_command_guidance_suggests_nearby_commands() {
+        let message = format_unknown_slash_command("stats");
+        assert!(message.contains("Unknown slash command: /stats"));
+        assert!(message.contains("/status"));
+        assert!(message.contains("/help"));
+    }
 }

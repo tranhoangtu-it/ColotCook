@@ -431,4 +431,13 @@ mod tests {
 
         fs::remove_dir_all(root).expect("cleanup temp dir");
     }
+
+    // -- Tests migrated from main.rs ------------------------------------------
+
+    #[test]
+    fn init_template_mentions_detected_rust_workspace() {
+        let rendered = render_init_claude_md(Path::new("."));
+        assert!(rendered.contains("# CLAUDE.md"));
+        assert!(rendered.contains("cargo clippy --workspace --all-targets -- -D warnings"));
+    }
 }

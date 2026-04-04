@@ -615,4 +615,108 @@ mod tests {
         // multiline → newline between name and content
         assert!(result.contains('\n'));
     }
+
+    // -- Tests migrated from main.rs ------------------------------------------
+
+    #[test]
+    fn tool_rendering_helpers_compact_output() {
+        let start = format_tool_call_start("read_file", r#"{"path":"src/main.rs"}"#);
+        assert!(start.contains("read_file"));
+        assert!(start.contains("src/main.rs"));
+
+        let done = format_tool_result(
+            "read_file",
+            r#"{"file":{"filePath":"src/main.rs","content":"hello","numLines":1,"startLine":1,"totalLines":1}}"#,
+            false,
+        );
+        assert!(done.contains("Read src/main.rs"));
+        assert!(done.contains("hello"));
+    }
+
+    #[test]
+    fn tool_rendering_truncates_large_read_output_for_display_only() {
+        let content = (0..200)
+            .map(|index| format!("line {index:03}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let output = serde_json::json!({
+            "file": {
+                "filePath": "src/main.rs",
+                "content": content,
+                "numLines": 200,
+                "startLine": 1,
+                "totalLines": 200
+            }
+        })
+        .to_string();
+
+        let rendered = format_tool_result("read_file", &output, false);
+
+        assert!(rendered.contains("line 000"));
+        assert!(rendered.contains("line 079"));
+        assert!(!rendered.contains("line 199"));
+        assert!(rendered.contains("full result preserved in session"));
+        assert!(output.contains("line 199"));
+    }
+
+    #[test]
+    fn tool_rendering_truncates_large_bash_output_for_display_only() {
+        let stdout = (0..120)
+            .map(|index| format!("stdout {index:03}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let output = serde_json::json!({
+            "stdout": stdout,
+            "stderr": "",
+            "returnCodeInterpretation": "completed successfully"
+        })
+        .to_string();
+
+        let rendered = format_tool_result("bash", &output, false);
+
+        assert!(rendered.contains("stdout 000"));
+        assert!(rendered.contains("stdout 059"));
+        assert!(!rendered.contains("stdout 119"));
+        assert!(rendered.contains("full result preserved in session"));
+        assert!(output.contains("stdout 119"));
+    }
+
+    #[test]
+    fn tool_rendering_truncates_generic_long_output_for_display_only() {
+        let items = (0..120)
+            .map(|index| format!("payload {index:03}"))
+            .collect::<Vec<_>>();
+        let output = serde_json::json!({
+            "summary": "plugin payload",
+            "items": items,
+        })
+        .to_string();
+
+        let rendered = format_tool_result("plugin_echo", &output, false);
+
+        assert!(rendered.contains("plugin_echo"));
+        assert!(rendered.contains("payload 000"));
+        assert!(rendered.contains("payload 040"));
+        assert!(!rendered.contains("payload 080"));
+        assert!(!rendered.contains("payload 119"));
+        assert!(rendered.contains("full result preserved in session"));
+        assert!(output.contains("payload 119"));
+    }
+
+    #[test]
+    fn tool_rendering_truncates_raw_generic_output_for_display_only() {
+        let output = (0..120)
+            .map(|index| format!("raw {index:03}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let rendered = format_tool_result("plugin_echo", &output, false);
+
+        assert!(rendered.contains("plugin_echo"));
+        assert!(rendered.contains("raw 000"));
+        assert!(rendered.contains("raw 059"));
+        assert!(!rendered.contains("raw 119"));
+        assert!(rendered.contains("full result preserved in session"));
+        assert!(output.contains("raw 119"));
+    }
 }

@@ -704,4 +704,53 @@ mod tests {
             command: "echo cancel".to_string(),
         });
     }
+
+    // -- Tests migrated from main.rs ------------------------------------------
+
+    #[test]
+    fn hook_abort_monitor_stops_without_aborting() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let abort_signal = runtime::HookAbortSignal::new();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let monitor = HookAbortMonitor::spawn_with_waiter(
+            abort_signal.clone(),
+            move |stop_rx, abort_signal| {
+                ready_tx.send(()).expect("ready signal");
+                let _ = stop_rx.recv();
+                assert!(!abort_signal.is_aborted());
+            },
+        );
+
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("waiter should be ready");
+        monitor.stop();
+
+        assert!(!abort_signal.is_aborted());
+    }
+
+    #[test]
+    fn hook_abort_monitor_propagates_interrupt() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let abort_signal = runtime::HookAbortSignal::new();
+        let (done_tx, done_rx) = mpsc::channel();
+        let monitor = HookAbortMonitor::spawn_with_waiter(
+            abort_signal.clone(),
+            move |_stop_rx, abort_signal| {
+                abort_signal.abort();
+                done_tx.send(()).expect("done signal");
+            },
+        );
+
+        done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("interrupt should complete");
+        monitor.stop();
+
+        assert!(abort_signal.is_aborted());
+    }
 }

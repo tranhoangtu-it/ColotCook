@@ -1889,6 +1889,364 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    // -- Tests migrated from main.rs ------------------------------------------
+
+    #[test]
+    fn resume_report_uses_sectioned_layout() {
+        let report = format_resume_report("session.jsonl", 14, 6);
+        assert!(report.contains("Session resumed"));
+        assert!(report.contains("Session file     session.jsonl"));
+        assert!(report.contains("Messages         14"));
+        assert!(report.contains("Turns            6"));
+    }
+
+    #[test]
+    fn compact_report_uses_structured_output() {
+        let compacted = format_compact_report(8, 5, false);
+        assert!(compacted.contains("Compact"));
+        assert!(compacted.contains("Result           compacted"));
+        assert!(compacted.contains("Messages removed 8"));
+        let skipped = format_compact_report(0, 3, true);
+        assert!(skipped.contains("Result           skipped"));
+    }
+
+    #[test]
+    fn cost_report_uses_sectioned_layout() {
+        let report = format_cost_report(TokenUsage {
+            input_tokens: 20,
+            output_tokens: 8,
+            cache_creation_input_tokens: 3,
+            cache_read_input_tokens: 1,
+        });
+        assert!(report.contains("Cost"));
+        assert!(report.contains("Input tokens     20"));
+        assert!(report.contains("Output tokens    8"));
+        assert!(report.contains("Cache create     3"));
+        assert!(report.contains("Cache read       1"));
+        assert!(report.contains("Total tokens     32"));
+    }
+
+    #[test]
+    fn permissions_report_uses_sectioned_layout() {
+        let report = format_permissions_report("workspace-write");
+        assert!(report.contains("Permissions"));
+        assert!(report.contains("Active mode      workspace-write"));
+        assert!(report.contains("Modes"));
+        assert!(report.contains("read-only          ○ available Read/search tools only"));
+        assert!(report.contains("workspace-write    ● current   Edit files inside the workspace"));
+        assert!(report.contains("danger-full-access ○ available Unrestricted tool access"));
+    }
+
+    #[test]
+    fn permissions_switch_report_is_structured() {
+        let report = format_permissions_switch_report("read-only", "workspace-write");
+        assert!(report.contains("Permissions updated"));
+        assert!(report.contains("Result           mode switched"));
+        assert!(report.contains("Previous mode    read-only"));
+        assert!(report.contains("Active mode      workspace-write"));
+        assert!(report.contains("Applies to       subsequent tool calls"));
+    }
+
+    #[test]
+    fn model_report_uses_sectioned_layout() {
+        let report = format_model_report("claude-sonnet", 12, 4);
+        assert!(report.contains("Model"));
+        assert!(report.contains("Current model    claude-sonnet"));
+        assert!(report.contains("Session messages 12"));
+        assert!(report.contains("Switch models with /model <name>"));
+    }
+
+    #[test]
+    fn model_switch_report_preserves_context_summary() {
+        let report = format_model_switch_report("claude-sonnet", "claude-opus", 9);
+        assert!(report.contains("Model updated"));
+        assert!(report.contains("Previous         claude-sonnet"));
+        assert!(report.contains("Current          claude-opus"));
+        assert!(report.contains("Preserved msgs   9"));
+    }
+
+    #[test]
+    fn status_line_reports_model_and_token_totals() {
+        let status = format_status_report(
+            "claude-sonnet",
+            StatusUsage {
+                message_count: 7,
+                turns: 3,
+                latest: TokenUsage {
+                    input_tokens: 5,
+                    output_tokens: 4,
+                    cache_creation_input_tokens: 1,
+                    cache_read_input_tokens: 0,
+                },
+                cumulative: TokenUsage {
+                    input_tokens: 20,
+                    output_tokens: 8,
+                    cache_creation_input_tokens: 2,
+                    cache_read_input_tokens: 1,
+                },
+                estimated_tokens: 128,
+            },
+            "workspace-write",
+            &StatusContext {
+                cwd: std::path::PathBuf::from("/tmp/project"),
+                session_path: Some(std::path::PathBuf::from("session.jsonl")),
+                loaded_config_files: 2,
+                discovered_config_files: 3,
+                memory_file_count: 4,
+                project_root: Some(std::path::PathBuf::from("/tmp")),
+                git_branch: Some("main".to_string()),
+                git_summary: GitWorkspaceSummary {
+                    changed_files: 3,
+                    staged_files: 1,
+                    unstaged_files: 1,
+                    untracked_files: 1,
+                    conflicted_files: 0,
+                },
+                sandbox_status: colotcook_runtime::SandboxStatus::default(),
+            },
+        );
+        assert!(status.contains("Status"));
+        assert!(status.contains("Model            claude-sonnet"));
+        assert!(status.contains("Permission mode  workspace-write"));
+        assert!(status.contains("Messages         7"));
+        assert!(status.contains("Latest total     10"));
+        assert!(status.contains("Cumulative total 31"));
+        assert!(status.contains("Cwd              /tmp/project"));
+        assert!(status.contains("Project root     /tmp"));
+        assert!(status.contains("Git branch       main"));
+        assert!(
+            status.contains("Git state        dirty · 3 files · 1 staged, 1 unstaged, 1 untracked")
+        );
+        assert!(status.contains("Changed files    3"));
+        assert!(status.contains("Staged           1"));
+        assert!(status.contains("Unstaged         1"));
+        assert!(status.contains("Untracked        1"));
+        assert!(status.contains("Session          session.jsonl"));
+        assert!(status.contains("Config files     loaded 2/3"));
+        assert!(status.contains("Memory files     4"));
+        assert!(status.contains("Suggested flow   /status → /diff → /commit"));
+    }
+
+    #[test]
+    fn commit_reports_surface_workspace_context() {
+        let summary = GitWorkspaceSummary {
+            changed_files: 2,
+            staged_files: 1,
+            unstaged_files: 1,
+            untracked_files: 0,
+            conflicted_files: 0,
+        };
+
+        let preflight = format_commit_preflight_report(Some("feature/ux"), summary);
+        assert!(preflight.contains("Result           ready"));
+        assert!(preflight.contains("Branch           feature/ux"));
+        assert!(preflight.contains("Workspace        dirty · 2 files · 1 staged, 1 unstaged"));
+        assert!(preflight
+            .contains("Action           create a git commit from the current workspace changes"));
+    }
+
+    #[test]
+    fn commit_skipped_report_points_to_next_steps() {
+        let report = format_commit_skipped_report();
+        assert!(report.contains("Reason           no workspace changes"));
+        assert!(report
+            .contains("Action           create a git commit from the current workspace changes"));
+        assert!(report.contains("/status to inspect context"));
+        assert!(report.contains("/diff to inspect repo changes"));
+    }
+
+    #[test]
+    fn runtime_slash_reports_describe_command_behavior() {
+        let bughunter = format_bughunter_report(Some("runtime"));
+        assert!(bughunter.contains("Scope            runtime"));
+        assert!(bughunter.contains("inspect the selected code for likely bugs"));
+
+        let ultraplan = format_ultraplan_report(Some("ship the release"));
+        assert!(ultraplan.contains("Task             ship the release"));
+        assert!(ultraplan.contains("break work into a multi-step execution plan"));
+
+        let pr = format_pr_report("feature/ux", Some("ready for review"));
+        assert!(pr.contains("Branch           feature/ux"));
+        assert!(pr.contains("draft or create a pull request"));
+
+        let issue = format_issue_report(Some("flaky test"));
+        assert!(issue.contains("Context          flaky test"));
+        assert!(issue.contains("draft or create a GitHub issue"));
+    }
+
+    #[test]
+    fn no_arg_commands_reject_unexpected_arguments() {
+        assert!(validate_no_args("/commit", None).is_ok());
+
+        let error = validate_no_args("/commit", Some("now"))
+            .expect_err("unexpected arguments should fail")
+            .to_string();
+        assert!(error.contains("/commit does not accept arguments"));
+        assert!(error.contains("Received: now"));
+    }
+
+    #[test]
+    fn normalizes_supported_permission_modes() {
+        assert_eq!(normalize_permission_mode("read-only"), Some("read-only"));
+        assert_eq!(
+            normalize_permission_mode("workspace-write"),
+            Some("workspace-write")
+        );
+        assert_eq!(
+            normalize_permission_mode("danger-full-access"),
+            Some("danger-full-access")
+        );
+        assert_eq!(normalize_permission_mode("unknown"), None);
+    }
+
+    #[test]
+    fn parses_detached_head_from_status_snapshot() {
+        assert_eq!(
+            parse_git_status_branch(Some(
+                "## HEAD (no branch)
+ M src/main.rs"
+            )),
+            Some("detached HEAD".to_string())
+        );
+    }
+
+    #[test]
+    fn parses_git_workspace_summary_counts() {
+        let summary = parse_git_workspace_summary(Some(
+            "## feature/ux
+M  src/main.rs
+ M README.md
+?? notes.md
+UU conflicted.rs",
+        ));
+
+        assert_eq!(
+            summary,
+            GitWorkspaceSummary {
+                changed_files: 4,
+                staged_files: 2,
+                unstaged_files: 2,
+                untracked_files: 1,
+                conflicted_files: 1,
+            }
+        );
+        assert_eq!(
+            summary.headline(),
+            "dirty · 4 files · 2 staged, 2 unstaged, 1 untracked, 1 conflicted"
+        );
+    }
+
+    #[test]
+    fn resume_usage_mentions_latest_shortcut() {
+        let usage = render_resume_usage();
+        assert!(usage.contains("/resume <session-path|session-id|latest>"));
+        assert!(usage.contains(".colotcook/sessions/<session-id>.jsonl"));
+        assert!(usage.contains("/session list"));
+    }
+
+    #[test]
+    fn config_report_supports_section_views() {
+        let report = render_config_report(Some("env")).expect("config report should render");
+        assert!(report.contains("Merged section: env"));
+        let plugins_report =
+            render_config_report(Some("plugins")).expect("plugins config report should render");
+        assert!(plugins_report.contains("Merged section: plugins"));
+    }
+
+    #[test]
+    fn memory_report_uses_sectioned_layout() {
+        let report = render_memory_report().expect("memory report should render");
+        assert!(report.contains("Memory"));
+        assert!(report.contains("Working directory"));
+        assert!(report.contains("Instruction files"));
+        assert!(report.contains("Discovered files"));
+    }
+
+    #[test]
+    fn config_report_uses_sectioned_layout() {
+        let report = render_config_report(None).expect("config report should render");
+        assert!(report.contains("Config"));
+        assert!(report.contains("Discovered files"));
+        assert!(report.contains("Merged JSON"));
+    }
+
+    #[test]
+    fn repl_help_mentions_history_completion_and_multiline() {
+        let help = render_repl_help();
+        assert!(help.contains("Up/Down"));
+        assert!(help.contains("Tab"));
+        assert!(help.contains("Shift+Enter/Ctrl+J"));
+    }
+
+    #[test]
+    fn formats_unknown_slash_command_with_suggestions() {
+        let report = format_unknown_slash_command_message("stats");
+        assert!(report.contains("unknown slash command: /stats"));
+        assert!(report.contains("Did you mean /status?"));
+        assert!(report.contains("Use /help"));
+    }
+
+    #[test]
+    fn status_context_reads_real_workspace_metadata() {
+        let context = status_context(None).expect("status context should load");
+        assert!(context.cwd.is_absolute());
+        assert!(context.discovered_config_files >= context.loaded_config_files);
+        assert!(context.loaded_config_files <= context.discovered_config_files);
+    }
+
+    #[test]
+    fn parses_git_status_metadata() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "colotcook-reports-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("root dir");
+        let (project_root, branch) = parse_git_status_metadata_for(
+            &temp_root,
+            Some(
+                "## rcc/cli...origin/rcc/cli
+ M src/main.rs",
+            ),
+        );
+        assert_eq!(branch.as_deref(), Some("rcc/cli"));
+        assert!(project_root.is_none());
+        std::fs::remove_dir_all(temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn repl_help_includes_shared_commands_and_exit() {
+        let help = render_repl_help();
+        assert!(help.contains("REPL"));
+        assert!(help.contains("/help"));
+        assert!(help.contains("Complete commands, modes, and recent sessions"));
+        assert!(help.contains("/status"));
+        assert!(help.contains("/sandbox"));
+        assert!(help.contains("/model [model]"));
+        assert!(help.contains("/permissions [read-only|workspace-write|danger-full-access]"));
+        assert!(help.contains("/clear [--confirm]"));
+        assert!(help.contains("/cost"));
+        assert!(help.contains("/resume <session-path>"));
+        assert!(help.contains("/config [env|hooks|model|plugins]"));
+        assert!(help.contains("/memory"));
+        assert!(help.contains("/init"));
+        assert!(help.contains("/diff"));
+        assert!(help.contains("/version"));
+        assert!(help.contains("/export [file]"));
+        assert!(help.contains("/session [list|switch <session-id>|fork [branch-name]]"));
+        assert!(help.contains(
+            "/plugin [list|install <path>|enable <name>|disable <name>|uninstall <id>|update <id>]"
+        ));
+        assert!(help.contains("aliases: /plugins, /marketplace"));
+        assert!(help.contains("/agents"));
+        assert!(help.contains("/skills"));
+        assert!(help.contains("/exit"));
+        assert!(help.contains("Auto-save            .colotcook/sessions/<session-id>.jsonl"));
+        assert!(help.contains("Resume latest        /resume latest"));
+    }
 }
 
 /// Print a /status snapshot (used in non-REPL mode).

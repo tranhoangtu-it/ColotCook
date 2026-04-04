@@ -1882,4 +1882,268 @@ mod tests {
             InternalPromptProgressEvent::Failed
         );
     }
+
+    // -- Tests migrated from main.rs ------------------------------------------
+
+    #[test]
+    fn converts_tool_roundtrip_messages() {
+        let messages = vec![
+            ConversationMessage::user_text("hello"),
+            ConversationMessage::assistant(vec![ContentBlock::ToolUse {
+                id: "tool-1".to_string(),
+                name: "bash".to_string(),
+                input: "{\"command\":\"pwd\"}".to_string(),
+            }]),
+            ConversationMessage {
+                role: MessageRole::Tool,
+                blocks: vec![ContentBlock::ToolResult {
+                    tool_use_id: "tool-1".to_string(),
+                    tool_name: "bash".to_string(),
+                    output: "ok".to_string(),
+                    is_error: false,
+                }],
+                usage: None,
+            },
+        ];
+
+        let converted = convert_messages(&messages);
+        assert_eq!(converted.len(), 3);
+        assert_eq!(converted[1].role, "assistant");
+        assert_eq!(converted[2].role, "user");
+    }
+
+    #[test]
+    fn ultraplan_progress_lines_include_phase_step_and_elapsed_status() {
+        use std::time::Duration;
+
+        let snapshot = InternalPromptProgressState {
+            command_label: "Ultraplan",
+            task_label: "ship plugin progress".to_string(),
+            step: 3,
+            phase: "running read_file".to_string(),
+            detail: Some("reading rust/crates/cli/src/main.rs".to_string()),
+            saw_final_text: false,
+        };
+
+        let started = format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Started,
+            &snapshot,
+            Duration::from_secs(0),
+            None,
+        );
+        let heartbeat = format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Heartbeat,
+            &snapshot,
+            Duration::from_secs(9),
+            None,
+        );
+        let completed = format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Complete,
+            &snapshot,
+            Duration::from_secs(12),
+            None,
+        );
+        let failed = format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Failed,
+            &snapshot,
+            Duration::from_secs(12),
+            Some("network timeout"),
+        );
+
+        assert!(started.contains("planning started"));
+        assert!(started.contains("current step 3"));
+        assert!(heartbeat.contains("heartbeat"));
+        assert!(heartbeat.contains("9s elapsed"));
+        assert!(heartbeat.contains("phase running read_file"));
+        assert!(completed.contains("completed"));
+        assert!(completed.contains("3 steps total"));
+        assert!(failed.contains("failed"));
+        assert!(failed.contains("network timeout"));
+    }
+
+    #[test]
+    fn describe_tool_progress_summarizes_known_tools() {
+        assert_eq!(
+            describe_tool_progress("read_file", r#"{"path":"src/main.rs"}"#),
+            "reading src/main.rs"
+        );
+        assert!(
+            describe_tool_progress("bash", r#"{"command":"cargo test -p colotcook-cli"}"#)
+                .contains("cargo test -p colotcook-cli")
+        );
+        assert_eq!(
+            describe_tool_progress("grep_search", r#"{"pattern":"ultraplan","path":"rust"}"#),
+            "grep `ultraplan` in rust"
+        );
+    }
+
+    #[test]
+    fn push_output_block_renders_markdown_text() {
+        use colotcook_api::OutputContentBlock;
+
+        let mut out = Vec::new();
+        let mut events = Vec::new();
+        let mut pending_tool = None;
+
+        push_output_block(
+            OutputContentBlock::Text {
+                text: "# Heading".to_string(),
+            },
+            &mut out,
+            &mut events,
+            &mut pending_tool,
+            false,
+        )
+        .expect("text block should render");
+
+        let rendered = String::from_utf8(out).expect("utf8");
+        assert!(rendered.contains("Heading"));
+        assert!(rendered.contains('\u{1b}'));
+    }
+
+    #[test]
+    fn push_output_block_skips_empty_object_prefix_for_tool_streams() {
+        use colotcook_api::OutputContentBlock;
+        use serde_json::json;
+
+        let mut out = Vec::new();
+        let mut events = Vec::new();
+        let mut pending_tool = None;
+
+        push_output_block(
+            OutputContentBlock::ToolUse {
+                id: "tool-1".to_string(),
+                name: "read_file".to_string(),
+                input: json!({}),
+            },
+            &mut out,
+            &mut events,
+            &mut pending_tool,
+            true,
+        )
+        .expect("tool block should accumulate");
+
+        assert!(events.is_empty());
+        assert_eq!(
+            pending_tool,
+            Some(("tool-1".to_string(), "read_file".to_string(), String::new(),))
+        );
+    }
+
+    #[test]
+    fn response_to_events_preserves_empty_object_json_input_outside_streaming() {
+        use colotcook_api::{MessageResponse, OutputContentBlock, Usage};
+        use serde_json::json;
+
+        let mut out = Vec::new();
+        let events = response_to_events(
+            MessageResponse {
+                id: "msg-1".to_string(),
+                kind: "message".to_string(),
+                model: "claude-opus-4-6".to_string(),
+                role: "assistant".to_string(),
+                content: vec![OutputContentBlock::ToolUse {
+                    id: "tool-1".to_string(),
+                    name: "read_file".to_string(),
+                    input: json!({}),
+                }],
+                stop_reason: Some("tool_use".to_string()),
+                stop_sequence: None,
+                usage: Usage {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                request_id: None,
+            },
+            &mut out,
+        )
+        .expect("response conversion should succeed");
+
+        assert!(matches!(
+            &events[0],
+            AssistantEvent::ToolUse { name, input, .. }
+                if name == "read_file" && input == "{}"
+        ));
+    }
+
+    #[test]
+    fn response_to_events_preserves_non_empty_json_input_outside_streaming() {
+        use colotcook_api::{MessageResponse, OutputContentBlock, Usage};
+        use serde_json::json;
+
+        let mut out = Vec::new();
+        let events = response_to_events(
+            MessageResponse {
+                id: "msg-2".to_string(),
+                kind: "message".to_string(),
+                model: "claude-opus-4-6".to_string(),
+                role: "assistant".to_string(),
+                content: vec![OutputContentBlock::ToolUse {
+                    id: "tool-2".to_string(),
+                    name: "read_file".to_string(),
+                    input: json!({ "path": "rust/Cargo.toml" }),
+                }],
+                stop_reason: Some("tool_use".to_string()),
+                stop_sequence: None,
+                usage: Usage {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                request_id: None,
+            },
+            &mut out,
+        )
+        .expect("response conversion should succeed");
+
+        assert!(matches!(
+            &events[0],
+            AssistantEvent::ToolUse { name, input, .. }
+                if name == "read_file" && input == "{\"path\":\"rust/Cargo.toml\"}"
+        ));
+    }
+
+    #[test]
+    fn response_to_events_ignores_thinking_blocks() {
+        use colotcook_api::{MessageResponse, OutputContentBlock, Usage};
+
+        let mut out = Vec::new();
+        let events = response_to_events(
+            MessageResponse {
+                id: "msg-3".to_string(),
+                kind: "message".to_string(),
+                model: "claude-opus-4-6".to_string(),
+                role: "assistant".to_string(),
+                content: vec![
+                    OutputContentBlock::Thinking {
+                        thinking: "step 1".to_string(),
+                        signature: Some("sig_123".to_string()),
+                    },
+                    OutputContentBlock::Text {
+                        text: "Final answer".to_string(),
+                    },
+                ],
+                stop_reason: Some("end_turn".to_string()),
+                stop_sequence: None,
+                usage: Usage {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                request_id: None,
+            },
+            &mut out,
+        )
+        .expect("response conversion should succeed");
+
+        assert!(matches!(
+            &events[0],
+            AssistantEvent::TextDelta(text) if text == "Final answer"
+        ));
+        assert!(!String::from_utf8(out).expect("utf8").contains("step 1"));
+    }
 }
