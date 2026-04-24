@@ -1807,7 +1807,7 @@ mod tests {
         .expect("grep content should succeed");
         let grep_content_output: serde_json::Value =
             serde_json::from_str(&grep_content).expect("json");
-        assert_eq!(grep_content_output["numFiles"], 0);
+        assert_eq!(grep_content_output["numFiles"], 1);
         assert!(grep_content_output["appliedLimit"].is_null());
         assert_eq!(grep_content_output["appliedOffset"], 1);
         assert!(grep_content_output["content"]

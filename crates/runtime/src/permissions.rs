@@ -4,13 +4,22 @@ use serde_json::Value;
 
 use crate::config::RuntimePermissionRuleConfig;
 
+/// Documented access order from most-restrictive to least-restrictive:
+/// `ReadOnly → WorkspaceWrite → Prompt → Allow → DangerFullAccess`.
+/// The derived `Ord` reflects this order so that comparisons like
+/// `current_mode >= required_mode` behave correctly.
+///
+/// **Important**: `Prompt` mode must *never* be treated as a plain access level
+/// via `>=` comparisons; it always requires user confirmation for every tool call
+/// regardless of the required mode.  The `authorize_with_context` logic excludes
+/// `Prompt` from the numeric comparison explicitly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PermissionMode {
     ReadOnly,
     WorkspaceWrite,
-    DangerFullAccess,
     Prompt,
     Allow,
+    DangerFullAccess,
 }
 
 impl PermissionMode {
@@ -223,9 +232,12 @@ impl PermissionPolicy {
                         prompter,
                     );
                 }
+                // Prompt mode must never be auto-allowed; it always requires
+                // user confirmation (handled below after this match block).
                 if allow_rule.is_some()
                     || current_mode == PermissionMode::Allow
-                    || current_mode >= required_mode
+                    || (current_mode != PermissionMode::Prompt
+                        && current_mode >= required_mode)
                 {
                     return PermissionOutcome::Allow;
                 }
@@ -248,9 +260,11 @@ impl PermissionPolicy {
             );
         }
 
+        // Prompt mode must never be auto-allowed via numeric comparison;
+        // fall through to the explicit Prompt check below.
         if allow_rule.is_some()
             || current_mode == PermissionMode::Allow
-            || current_mode >= required_mode
+            || (current_mode != PermissionMode::Prompt && current_mode >= required_mode)
         {
             return PermissionOutcome::Allow;
         }
@@ -820,5 +834,55 @@ mod tests {
             "/home/user/project/file.txt"
         ));
         assert!(super::validate_path_traversal("./relative/path"));
+    }
+
+    #[test]
+    fn prompt_mode_always_prompts_regardless_of_requirement() {
+        // Prompt mode must always invoke the prompter — it must never auto-allow
+        // even when the numeric Ord value would satisfy a >= comparison.
+        for required in [
+            PermissionMode::ReadOnly,
+            PermissionMode::WorkspaceWrite,
+            PermissionMode::Prompt,
+            PermissionMode::Allow,
+            PermissionMode::DangerFullAccess,
+        ] {
+            let policy = PermissionPolicy::new(PermissionMode::Prompt)
+                .with_tool_requirement("some_tool", required);
+
+            // Without a prompter → deny (no one to ask)
+            assert!(
+                matches!(
+                    policy.authorize("some_tool", "{}", None),
+                    PermissionOutcome::Deny { .. }
+                ),
+                "Prompt mode without prompter should deny for required={required:?}"
+            );
+
+            // With a permissive prompter → allow (the prompter was consulted)
+            let mut prompter = RecordingPrompter {
+                seen: Vec::new(),
+                allow: true,
+            };
+            let outcome = policy.authorize("some_tool", "{}", Some(&mut prompter));
+            assert_eq!(
+                outcome,
+                PermissionOutcome::Allow,
+                "Prompt mode with permissive prompter should allow for required={required:?}"
+            );
+            assert_eq!(
+                prompter.seen.len(),
+                1,
+                "Prompter must be called exactly once for required={required:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn prompt_mode_ordering_is_between_workspace_write_and_allow() {
+        assert!(PermissionMode::ReadOnly < PermissionMode::WorkspaceWrite);
+        assert!(PermissionMode::WorkspaceWrite < PermissionMode::Prompt);
+        assert!(PermissionMode::Prompt < PermissionMode::Allow);
+        assert!(PermissionMode::Allow < PermissionMode::DangerFullAccess);
     }
 }

@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 
 use glob::Pattern;
@@ -343,10 +343,23 @@ pub fn grep_search(input: &GrepSearchInput) -> io::Result<GrepSearchOutput> {
         apply_limit(filenames, input.head_limit, input.offset);
     let content_output = if output_mode == "content" {
         let (lines, limit, offset) = apply_limit(content_lines, input.head_limit, input.offset);
+        // Recompute the unique files represented in the limited content lines so
+        // that `num_files` and `filenames` accurately reflect what is returned.
+        let mut seen_files: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        for line in &lines {
+            // Each content line has the format "filepath:lineno:text" (with
+            // line numbers) or "filepath:text" (without).  The file path is
+            // always the prefix up to the first ':'.
+            if let Some(file_part) = line.split(':').next() {
+                seen_files.insert(file_part.to_string());
+            }
+        }
+        let unique_files: Vec<String> = seen_files.into_iter().collect();
         return Ok(GrepSearchOutput {
             mode: Some(output_mode),
-            num_files: filenames.len(),
-            filenames,
+            num_files: unique_files.len(),
+            filenames: unique_files,
             num_lines: Some(lines.len()),
             content: Some(lines.join("\n")),
             num_matches: None,
@@ -369,13 +382,32 @@ pub fn grep_search(input: &GrepSearchInput) -> io::Result<GrepSearchOutput> {
     })
 }
 
+/// Maximum directory depth for recursive file searches.
+const MAX_SEARCH_DEPTH: usize = 20;
+
+/// Directory names that are skipped unconditionally during recursive search
+/// to avoid traversing large generated or vendored trees.
+const SKIP_DIRS: &[&str] = &[".git", "node_modules", "target", ".svn", "__pycache__"];
+
 fn collect_search_files(base_path: &Path) -> io::Result<Vec<PathBuf>> {
     if base_path.is_file() {
         return Ok(vec![base_path.to_path_buf()]);
     }
 
     let mut files = Vec::new();
-    for entry in WalkDir::new(base_path) {
+    for entry in WalkDir::new(base_path)
+        .max_depth(MAX_SEARCH_DEPTH)
+        .into_iter()
+        .filter_entry(|e| {
+            // Skip well-known large/generated directories at any depth.
+            if e.file_type().is_dir() {
+                if let Some(name) = e.file_name().to_str() {
+                    return !SKIP_DIRS.contains(&name);
+                }
+            }
+            true
+        })
+    {
         let entry = entry.map_err(|error| io::Error::other(error.to_string()))?;
         if entry.file_type().is_file() {
             files.push(entry.path().to_path_buf());
@@ -446,6 +478,7 @@ fn make_patch(original: &str, updated: &str) -> Vec<StructuredPatchHunk> {
 }
 
 fn normalize_path(path: &str) -> io::Result<PathBuf> {
+    check_path_traversal(path)?;
     let candidate = if Path::new(path).is_absolute() {
         PathBuf::from(path)
     } else {
@@ -455,6 +488,8 @@ fn normalize_path(path: &str) -> io::Result<PathBuf> {
 }
 
 fn normalize_path_allow_missing(path: &str) -> io::Result<PathBuf> {
+    check_path_traversal(path)?;
+    check_sensitive_write_target(path)?;
     let candidate = if Path::new(path).is_absolute() {
         PathBuf::from(path)
     } else {
@@ -475,6 +510,36 @@ fn normalize_path_allow_missing(path: &str) -> io::Result<PathBuf> {
     }
 
     Ok(candidate)
+}
+
+/// Reject paths that contain a `..` component (directory traversal attack).
+fn check_path_traversal(path: &str) -> io::Result<()> {
+    let has_parent_component = Path::new(path)
+        .components()
+        .any(|c| c == Component::ParentDir);
+    if has_parent_component {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "path traversal via '..' is not allowed",
+        ));
+    }
+    Ok(())
+}
+
+/// Reject write attempts targeting well-known sensitive system directories.
+fn check_sensitive_write_target(path: &str) -> io::Result<()> {
+    // Normalize separators so the check works on both Unix and Windows paths.
+    let normalised = path.replace('\\', "/");
+    const SENSITIVE: &[&str] = &["/etc/", "/proc/", "/sys/", "/root/"];
+    for prefix in SENSITIVE {
+        if normalised.starts_with(prefix) || normalised == prefix.trim_end_matches('/') {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("writes to system path '{path}' are not permitted"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -545,6 +610,43 @@ mod tests {
             multiline: Some(false),
         })
         .expect("grep should succeed");
-        assert!(grep_output.content.unwrap_or_default().contains("hello"));
+        let content = grep_output.content.unwrap_or_default();
+        assert!(content.contains("hello"));
+        // num_files must reflect the unique files in the returned content lines.
+        assert_eq!(grep_output.num_files, 1);
+    }
+
+    #[test]
+    fn rejects_path_traversal_in_read() {
+        let err = read_file("../../etc/passwd", None, None)
+            .expect_err("traversal path should be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn rejects_path_traversal_in_write() {
+        let err = write_file("../../tmp/evil.txt", "bad")
+            .expect_err("traversal path should be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn rejects_sensitive_system_write() {
+        let err = write_file("/etc/passwd", "evil content")
+            .expect_err("write to /etc/ should be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+
+        let err = write_file("/proc/sysrq-trigger", "b")
+            .expect_err("write to /proc/ should be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn allows_absolute_paths_outside_sensitive_dirs() {
+        // Writing to /tmp is allowed.
+        let path = temp_path("safe-write.txt");
+        let out = write_file(path.to_string_lossy().as_ref(), "safe")
+            .expect("write to /tmp should succeed");
+        assert_eq!(out.kind, "create");
     }
 }

@@ -1,6 +1,7 @@
 //! Web fetch and search tool implementations.
 
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use reqwest::blocking::Client;
@@ -8,6 +9,10 @@ use reqwest::blocking::Client;
 use crate::types::{
     SearchHit, WebFetchInput, WebFetchOutput, WebSearchInput, WebSearchOutput, WebSearchResultItem,
 };
+
+/// Monotonic counter used to generate unique `tool_use_id` values for web
+/// search results within a single process lifetime.
+static WEB_SEARCH_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// Fetch a URL and return a summarized `WebFetchOutput`.
 pub(crate) fn execute_web_fetch(input: &WebFetchInput) -> Result<WebFetchOutput, String> {
@@ -91,7 +96,10 @@ pub(crate) fn execute_web_search(input: &WebSearchInput) -> Result<WebSearchOutp
         results: vec![
             WebSearchResultItem::Commentary(summary),
             WebSearchResultItem::SearchResult {
-                tool_use_id: String::from("web_search_1"),
+                tool_use_id: format!(
+                    "web_search_{}",
+                    WEB_SEARCH_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+                ),
                 content: hits,
             },
         ],

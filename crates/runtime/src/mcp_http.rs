@@ -19,6 +19,7 @@ use reqwest::Client;
 use tokio::sync::RwLock;
 
 use crate::config::McpOAuthConfig;
+use crate::logging::log_warn;
 use crate::mcp_client::{McpClientAuth, McpRemoteTransport, DEFAULT_MCP_TOOL_CALL_TIMEOUT_MS};
 use crate::mcp_stdio::{
     JsonRpcId, JsonRpcRequest, JsonRpcResponse, McpInitializeClientInfo, McpInitializeParams,
@@ -65,10 +66,13 @@ impl McpOAuthTokenManager {
                 // No saved credentials, will require authentication on first use
             }
             Err(e) => {
-                // Log but don't fail initialization; auth might be configured differently
-                #[cfg(debug_assertions)]
-                eprintln!(
-                    "[MCP] warning: failed to load saved OAuth credentials for {server_name}: {e}"
+                // Log at warn level in all builds so operators are aware of
+                // credential load failures even in production deployments.
+                log_warn(
+                    "mcp_oauth",
+                    &format!(
+                        "failed to load saved OAuth credentials for {server_name}: {e}"
+                    ),
                 );
             }
         }
